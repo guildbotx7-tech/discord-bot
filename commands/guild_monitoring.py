@@ -174,7 +174,7 @@ class GuildMonitoringCog(commands.Cog):
         """Register a Free Fire guild for monitoring with access token, channel ID, and guild name"""
         try:
             await interaction.response.defer()
-        except discord.errors.NotFound:
+        except (discord.errors.NotFound, discord.errors.HTTPException):
             # Interaction expired, try to respond immediately instead
             try:
                 await interaction.response.send_message("⏱️ Processing took too long. Please try again.", ephemeral=True)
@@ -270,7 +270,7 @@ class GuildMonitoringCog(commands.Cog):
         """Remove the registered guild for a channel"""
         try:
             await interaction.response.defer()
-        except discord.errors.NotFound:
+        except (discord.errors.NotFound, discord.errors.HTTPException):
             try:
                 await interaction.response.send_message("⏱️ Processing took too long. Please try again.", ephemeral=True)
             except:
@@ -327,7 +327,7 @@ class GuildMonitoringCog(commands.Cog):
         """Set the monitoring cycle interval"""
         try:
             await interaction.response.defer()
-        except discord.errors.NotFound:
+        except (discord.errors.NotFound, discord.errors.HTTPException):
             try:
                 await interaction.response.send_message("⏱️ Processing took too long. Please try again.", ephemeral=True)
             except:
@@ -401,7 +401,7 @@ class GuildMonitoringCog(commands.Cog):
         """Show current members of the monitored guild"""
         try:
             await interaction.response.defer()
-        except discord.errors.NotFound:
+        except (discord.errors.NotFound, discord.errors.HTTPException):
             try:
                 await interaction.response.send_message("⏱️ Processing took too long. Please try again.", ephemeral=True)
             except:
@@ -453,7 +453,7 @@ class GuildMonitoringCog(commands.Cog):
         """Show combined guild members and recent membership changes"""
         try:
             await interaction.response.defer()
-        except discord.errors.NotFound:
+        except (discord.errors.NotFound, discord.errors.HTTPException):
             try:
                 await interaction.response.send_message("⏱️ Processing took too long. Please try again.", ephemeral=True)
             except:
@@ -502,10 +502,13 @@ class GuildMonitoringCog(commands.Cog):
 
             summary_embed = discord.Embed(
                 title="📊 Guild Updates",
-                color=discord.Color.blue()
+                description=f"Live guild summary for {interaction.channel.mention}",
+                color=discord.Color.blurple(),
+                timestamp=datetime.utcnow()
             )
-            summary_embed.add_field(name="Current Members", value=str(len(members)), inline=True)
-            summary_embed.add_field(name="Recent Changes", value=f"{len(changes)} (Joined: {joined_count}, Left: {left_count})", inline=True)
+            summary_embed.add_field(name="Guild ID", value=f"`{guild_id}`", inline=True)
+            summary_embed.add_field(name="Total Members", value=str(len(members)), inline=True)
+            summary_embed.add_field(name="Recent Changes", value=f"{len(changes)}\n✅ {joined_count} Joined\n❌ {left_count} Left", inline=False)
 
             if member_lines:
                 summary_embed.add_field(
@@ -515,14 +518,18 @@ class GuildMonitoringCog(commands.Cog):
                 )
 
             if change_lines:
-                if len(change_lines) <= 5:
-                    summary_embed.add_field(name="Top Changes", value="\n".join(change_lines), inline=False)
-                else:
-                    summary_embed.add_field(name="Top Changes", value="\n".join(change_lines[:5]) + f"\n... and {len(change_lines) - 5} more changes", inline=False)
+                summary_embed.add_field(
+                    name="Top Changes",
+                    value="\n".join(change_lines[:5]) if len(change_lines) <= 5 else "\n".join(change_lines[:5]) + f"\n... and {len(change_lines) - 5} more changes",
+                    inline=False
+                )
             else:
                 summary_embed.add_field(name="Recent Activity", value="No recent changes recorded.", inline=False)
 
-            summary_embed.set_footer(text=f"Page 1/{total_pages}")
+            if interaction.guild and interaction.guild.icon:
+                summary_embed.set_thumbnail(url=interaction.guild.icon.url)
+
+            summary_embed.set_footer(text=f"Page 1/{total_pages} • Use Previous/Next buttons to browse")
             pages.append(summary_embed)
 
             for page_index in range(member_pages):
@@ -530,10 +537,12 @@ class GuildMonitoringCog(commands.Cog):
                 chunk = member_lines[start:start + 10]
                 embed = discord.Embed(
                     title="📋 Guild Members",
-                    color=discord.Color.blue()
+                    description=f"Members {start + 1}-{start + len(chunk)} of {len(member_lines)}",
+                    color=discord.Color.blurple(),
+                    timestamp=datetime.utcnow()
                 )
                 embed.add_field(
-                    name=f"Members {start + 1}-{start + len(chunk)} of {len(member_lines)}",
+                    name="Member List",
                     value="\n".join(chunk),
                     inline=False
                 )
@@ -545,10 +554,12 @@ class GuildMonitoringCog(commands.Cog):
                 chunk = change_lines[start:start + 10]
                 embed = discord.Embed(
                     title="📌 Recent Changes",
-                    color=discord.Color.blue()
+                    description=f"Changes {start + 1}-{start + len(chunk)} of {len(change_lines)}",
+                    color=discord.Color.blurple(),
+                    timestamp=datetime.utcnow()
                 )
                 embed.add_field(
-                    name=f"Changes {start + 1}-{start + len(chunk)} of {len(change_lines)}",
+                    name="Recent Activity",
                     value="\n".join(chunk),
                     inline=False
                 )
@@ -567,7 +578,7 @@ class GuildMonitoringCog(commands.Cog):
         """Show recent membership changes for this channel's guild"""
         try:
             await interaction.response.defer()
-        except discord.errors.NotFound:
+        except (discord.errors.NotFound, discord.errors.HTTPException):
             try:
                 await interaction.response.send_message("⏱️ Processing took too long. Please try again.", ephemeral=True)
             except:
@@ -582,8 +593,10 @@ class GuildMonitoringCog(commands.Cog):
             return
 
         embed = discord.Embed(
-            title=f"📊 Recent Changes ({len(changes)})",
-            color=discord.Color.blue()
+            title="📊 Recent Guild Changes",
+            description=f"Latest membership activity for {interaction.channel.mention}",
+            color=discord.Color.blurple(),
+            timestamp=datetime.utcnow()
         )
 
         joined_count = sum(1 for c in changes if c["change_type"] == "joined")
@@ -591,15 +604,14 @@ class GuildMonitoringCog(commands.Cog):
 
         embed.add_field(name="✅ Joined", value=str(joined_count), inline=True)
         embed.add_field(name="❌ Left", value=str(left_count), inline=True)
-        embed.add_field(name="📊 Total", value=str(len(changes)), inline=True)
+        embed.add_field(name="📊 Total Changes", value=str(len(changes)), inline=True)
 
-        # Show recent changes
         change_list = []
-        for change in changes[:10]:  # Limit to 10 in embed
+        for change in changes[:10]:
             emoji = "✅" if change["change_type"] == "joined" else "❌"
             nickname = change["nickname"] or f"UID: {change['uid']}"
-            timestamp = change["timestamp"].split("T")[0]  # Date only
-            change_list.append(f"{emoji} {nickname} - {timestamp}")
+            timestamp = change["timestamp"].split("T")[0]
+            change_list.append(f"{emoji} **{nickname}** — {timestamp}")
 
         if change_list:
             embed.add_field(
@@ -608,8 +620,11 @@ class GuildMonitoringCog(commands.Cog):
                 inline=False
             )
 
+        if interaction.guild and interaction.guild.icon:
+            embed.set_thumbnail(url=interaction.guild.icon.url)
+
         if len(changes) > 10:
-            embed.set_footer(text=f"... and {len(changes) - 10} more changes")
+            embed.set_footer(text=f"Showing 10 of {len(changes)} changes")
 
         await interaction.followup.send(embed=embed)
 
@@ -619,7 +634,7 @@ class GuildMonitoringCog(commands.Cog):
         """Ban a player from the guild (logs the action)"""
         try:
             await interaction.response.defer()
-        except discord.errors.NotFound:
+        except (discord.errors.NotFound, discord.errors.HTTPException):
             try:
                 await interaction.response.send_message("⏱️ Processing took too long. Please try again.", ephemeral=True)
             except:
@@ -660,7 +675,7 @@ class GuildMonitoringCog(commands.Cog):
         """Globally ban a player from all monitored guilds"""
         try:
             await interaction.response.defer()
-        except discord.errors.NotFound:
+        except (discord.errors.NotFound, discord.errors.HTTPException):
             try:
                 await interaction.response.send_message("⏱️ Processing took too long. Please try again.", ephemeral=True)
             except:
