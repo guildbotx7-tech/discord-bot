@@ -1,9 +1,15 @@
 """Free Fire Guild Monitoring Commands - Integrated into main bot"""
 import asyncio
+import sys
+import os
+from pathlib import Path
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
-import os
 import json
 import math
 from datetime import datetime, timedelta
@@ -115,7 +121,7 @@ class GuildMonitoringCog(commands.Cog):
         if changes["joined"]:
             joined_items = list(changes["joined"])
             joined_list = []
-            for uid in joined_items[:5]:  # Limit to 5 per message
+            for uid in joined_items[:50]:  # Limit to 50 per message
                 member_data = self.get_member_info(uid)
                 name = member_data.get("nickname", f"UID: {uid}") if member_data else f"UID: {uid}"
                 joined_list.append(f"✅ {name}")
@@ -140,7 +146,7 @@ class GuildMonitoringCog(commands.Cog):
                 inline=False
             )
 
-        if len(changes["joined"]) > 5 or len(changes["left"]) > 5:
+        if len(changes["joined"]) > 50 or len(changes["left"]) > 50:
             embed.set_footer(text="... and more changes")
 
         try:
