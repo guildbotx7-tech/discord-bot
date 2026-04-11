@@ -1,0 +1,255 @@
+"""Channel-based guild monitoring functions for the new bot."""
+
+import sqlite3
+import json
+from datetime import datetime
+from pathlib import Path
+
+DB_PATH = Path(__file__).parent / "guild_monitor_bot.db"
+
+
+def init_channel_monitoring_db():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS channel_guilds (
+            channel_id INTEGER PRIMARY KEY,
+            guild_id TEXT NOT NULL,
+            access_token TEXT NOT NULL,
+            registered_by INTEGER,
+            registered_at TEXT
+        )
+    """)
+
+    try:
+        cursor.execute("PRAGMA table_info(channel_guilds)")
+        columns = [column[1] for column in cursor.fetchall()]
+        if "access_token" not in columns:
+            cursor.execute("ALTER TABLE channel_guilds ADD COLUMN access_token TEXT")
+            conn.commit()
+    except Exception:
+        pass
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS channel_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel_id INTEGER NOT NULL,
+            guild_id TEXT NOT NULL,
+            member_uids TEXT NOT NULL,
+            snapshot_at TEXT NOT NULL
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS channel_changes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel_id INTEGER NOT NULL,
+            guild_id TEXT NOT NULL,
+            uid TEXT NOT NULL,
+            change_type TEXT NOT NULL,
+            nickname TEXT,
+            timestamp TEXT NOT NULL
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS member_cache (
+            uid TEXT PRIMARY KEY,
+            data TEXT NOT NULL,
+            cached_at TEXT NOT NULL
+        )
+    """)
+
+    conn.commit()
+    conn.close()
+
+
+def get_channel_guild_id(channel_id):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT guild_id FROM channel_guilds WHERE channel_id = ?", (channel_id,))
+        result = cursor.fetchone()
+        conn.close()
+        return result[0] if result else None
+    except:
+        return None
+
+
+def register_channel_guild(channel_id, guild_id, access_token, registered_by):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT OR REPLACE INTO channel_guilds (channel_id, guild_id, access_token, registered_by, registered_at) VALUES (?, ?, ?, ?, ?)",
+            (channel_id, guild_id, access_token, registered_by, datetime.utcnow().isoformat())
+        )
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error registering channel guild: {e}")
+        return False
+
+
+def get_channel_access_token(channel_id):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT access_token FROM channel_guilds WHERE channel_id = ?", (channel_id,))
+        result = cursor.fetchone()
+        conn.close()
+        return result[0] if result else None
+    except:
+        return None
+
+
+def get_channel_last_list(channel_id):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT member_uids FROM channel_snapshots WHERE channel_id = ? ORDER BY snapshot_at DESC LIMIT 1", (channel_id,))
+        result = cursor.fetchone()
+        conn.close()
+        return set(json.loads(result[0])) if result else set()
+    except:
+        return set()
+
+
+def save_channel_snapshot(channel_id, guild_id, uids):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO channel_snapshots (channel_id, guild_id, member_uids, snapshot_at) VALUES (?, ?, ?, ?)",
+            (channel_id, guild_id, json.dumps(list(uids)), datetime.utcnow().isoformat())
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error saving channel snapshot: {e}")
+
+
+def log_channel_membership_change(channel_id, guild_id, uid, change_type, nickname=None):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO channel_changes (channel_id, guild_id, uid, change_type, nickname, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+            (channel_id, guild_id, uid, change_type, nickname, datetime.utcnow().isoformat())
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error logging channel change: {e}")
+
+
+def cache_member_data(uid, data):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT OR REPLACE INTO member_cache (uid, data, cached_at) VALUES (?, ?, ?)",
+            (uid, json.dumps(data), datetime.utcnow().isoformat())
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error caching member: {e}")
+
+
+def monitor_channel_guild(channel_id):
+    try:
+        from member_guild_api import fetch_member_guild, detect_list_changes
+
+        guild_id = get_channel_guild_id(channel_id)
+        access_token = get_channel_access_token(channel_id)
+
+        if not guild_id or not access_token:
+            return {"status": "error", "error": "No guild registered for this channel"}
+
+        api_response = fetch_member_guild(access_token)
+        current_members = api_response.get("members", [])
+
+        current_uids = set()
+        for member in current_members:
+            account_id = member.get("account_id")
+            if account_id:
+                current_uids.add(account_id)
+                cache_member_data(account_id, member)
+
+        previous_uids = get_channel_last_list(channel_id)
+
+        changes = detect_list_changes(previous_uids, current_uids)
+        changes["joined"] = list(changes["joined"])
+        changes["left"] = list(changes["left"])
+
+        for uid in changes["joined"]:
+            member_data = next((m for m in current_members if m.get("account_id") == uid), {})
+            nickname = member_data.get("nickname")
+            log_channel_membership_change(channel_id, guild_id, uid, "joined", nickname)
+
+        for uid in changes["left"]:
+            log_channel_membership_change(channel_id, guild_id, uid, "left")
+
+        save_channel_snapshot(channel_id, guild_id, current_uids)
+
+        return {
+            "status": "success",
+            "changes": changes,
+            "member_count": len(current_members)
+        }
+
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+def get_channel_recent_changes(channel_id, limit=50):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT uid, change_type, nickname, timestamp FROM channel_changes WHERE channel_id = ? ORDER BY timestamp DESC LIMIT ?",
+            (channel_id, limit)
+        )
+        results = cursor.fetchall()
+        conn.close()
+
+        changes = []
+        for row in results:
+            changes.append({
+                "uid": row[0],
+                "change_type": row[1],
+                "nickname": row[2],
+                "timestamp": row[3]
+            })
+
+        return changes
+    except Exception as e:
+        print(f"Error getting channel changes: {e}")
+        return []
+
+
+def get_channel_members(channel_id):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT data FROM member_cache WHERE uid IN (SELECT json_each.value FROM channel_snapshots, json_each(channel_snapshots.member_uids) WHERE channel_snapshots.channel_id = ? ORDER BY channel_snapshots.snapshot_at DESC LIMIT 1)",
+            (channel_id,)
+        )
+        results = cursor.fetchall()
+        conn.close()
+
+        members = []
+        for row in results:
+            members.append(json.loads(row[0]))
+
+        return members
+    except Exception as e:
+        print(f"Error getting channel members: {e}")
+        return []
+
+
+init_channel_monitoring_db()
