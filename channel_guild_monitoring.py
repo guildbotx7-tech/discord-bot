@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent / "guild_monitor_bot.db"
+DB_PATH = Path(__file__).parent / "discord_bot.db"
 
 
 def init_channel_monitoring_db():

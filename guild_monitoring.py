@@ -17,7 +17,7 @@ from member_guild_api import (
 )
 
 # Database for tracking list state and changes
-DB_PATH = Path(__file__).parent / "guild_monitor_bot.db"
+DB_PATH = Path(__file__).parent / "discord_bot.db"
 
 
 def init_monitoring_db():

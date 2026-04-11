@@ -152,7 +152,7 @@ class GuildMonitoringCog(commands.Cog):
         """Get cached member info"""
         try:
             import sqlite3
-            conn = sqlite3.connect("guild_monitor_bot.db")
+            conn = sqlite3.connect("discord_bot.db")
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT data FROM member_cache WHERE uid = ? ORDER BY cached_at DESC LIMIT 1",

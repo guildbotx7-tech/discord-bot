@@ -9,7 +9,7 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime
 
-DB_PATH = Path(__file__).parent / "guild_monitor_bot.db"
+DB_PATH = Path(__file__).parent / "discord_bot.db"
 
 
 class TokenStorageError(Exception):
