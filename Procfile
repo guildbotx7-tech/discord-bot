@@ -1,1 +1,1 @@
-worker: python guild_monitor_bot.py
+worker: python run_bots.py
