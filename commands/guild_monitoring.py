@@ -343,6 +343,11 @@ class GuildMonitoringCog(commands.Cog):
             await interaction.followup.send("❌ Only Head Commanders can set the monitoring cycle.", ephemeral=True)
             return
 
+        # Restrict to specific channel
+        if interaction.channel.id != 1492403871593791649:
+            await interaction.followup.send("❌ This command can only be used in the designated monitoring channel.", ephemeral=True)
+            return
+
         if minutes < 1 or minutes > 600:
             await interaction.followup.send("❌ Cycle interval must be between 1 and 600 minutes.", ephemeral=True)
             return
