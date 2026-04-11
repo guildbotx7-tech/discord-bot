@@ -69,6 +69,15 @@ def init_channel_monitoring_db():
         )
     """)
 
+    # Bot settings
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS bot_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -213,8 +222,11 @@ def monitor_channel_guild(channel_id):
             return {"status": "error", "error": "No guild registered for this channel"}
 
         # Fetch current member list
-        api_response = fetch_member_guild(access_token)
+        api_response = fetch_member_guild(access_token, timeout=10)
         current_members = api_response.get("members", [])
+
+        if not current_members:
+            return {"status": "error", "error": "Failed to fetch current member list or guild is empty"}
 
         # Cache member data and get UIDs
         current_uids = set()
@@ -302,6 +314,38 @@ def get_channel_members(channel_id):
     except Exception as e:
         print(f"Error getting channel members: {e}")
         return []
+
+
+def get_monitoring_interval():
+    """Get the current monitoring interval in minutes"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT value FROM bot_settings WHERE key = 'monitoring_interval'"
+        )
+        result = cursor.fetchone()
+        conn.close()
+        return int(result[0]) if result else 2  # Default 2 minutes
+    except:
+        return 2
+
+
+def set_monitoring_interval(minutes):
+    """Set the monitoring interval in minutes"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT OR REPLACE INTO bot_settings (key, value, updated_at) VALUES (?, ?, ?)",
+            ("monitoring_interval", str(minutes), datetime.utcnow().isoformat())
+        )
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error setting monitoring interval: {e}")
+        return False
 
 
 # Initialize database on import

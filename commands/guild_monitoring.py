@@ -17,7 +17,8 @@ from helpers import log_action, is_commander
 from member_guild_api import fetch_member_guild
 from channel_guild_monitoring import (
     get_channel_guild_id, register_channel_guild, unregister_channel_guild, monitor_channel_guild,
-    get_channel_recent_changes, get_channel_members, get_channel_access_token
+    get_channel_recent_changes, get_channel_members, get_channel_access_token,
+    get_monitoring_interval, set_monitoring_interval
 )
 
 
@@ -66,7 +67,7 @@ class GuildMonitoringCog(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.monitoring_interval = 2  # Default 2 minutes
+        self.monitoring_interval = get_monitoring_interval()  # Load from database
         self.monitoring_task = None
         self.start_monitoring_task()
 
@@ -354,6 +355,9 @@ class GuildMonitoringCog(commands.Cog):
 
         old_interval = self.monitoring_interval
         self.monitoring_interval = minutes
+
+        # Save to database
+        set_monitoring_interval(minutes)
 
         # Restart the task with new interval
         self.start_monitoring_task()
