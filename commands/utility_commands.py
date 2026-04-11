@@ -166,8 +166,8 @@ class UtilityCommands(commands.Cog):
                 "  • `/remove_guild` – Remove guild registration",
                 "  • `/guild_status` – Check monitoring status",
                 "  • `/guild_updates` – View current members and recent changes",
-                "  • `/guild_members` – View current guild members",
-                "  • `/guild_changes` – View recent changes",
+                "  • `/guild_members` – View current guild members with guild info",
+                "  • `/guild_changes` – View all current guild members with detailed data",
                 "  • `/ban_player` – Ban player from guild",
                 "  • `/global_ban` – Globally ban player",
                 "  • `/set_monitoring_cycle` – Set monitoring interval"

@@ -12,11 +12,13 @@ from discord import app_commands
 from discord.ext import commands, tasks
 import json
 import math
+import io
 from datetime import datetime, timedelta
 from helpers import log_action, is_commander
 from member_guild_api import fetch_member_guild
 from channel_guild_monitoring import (
-    get_channel_guild_id, register_channel_guild, unregister_channel_guild, monitor_channel_guild,
+    get_channel_guild_id, get_channel_guild_name, get_channel_registered_by,
+    register_channel_guild, unregister_channel_guild, monitor_channel_guild,
     get_channel_recent_changes, get_channel_members, get_channel_access_token,
     get_monitoring_interval, set_monitoring_interval
 )
@@ -52,6 +54,54 @@ class GuildUpdatesView(discord.ui.View):
 
     async def update_message(self, interaction: discord.Interaction):
         await interaction.response.edit_message(embed=self.pages[self.page], view=self)
+
+
+class GuildMembersView(discord.ui.View):
+    def __init__(self, members, guild_name, guild_id):
+        super().__init__(timeout=300)
+        self.members = members
+        self.guild_name = guild_name
+        self.guild_id = guild_id
+
+        members_button = discord.ui.Button(label="Members", style=discord.ButtonStyle.primary)
+        members_button.callback = self.show_members
+        self.add_item(members_button)
+
+    async def show_members(self, interaction: discord.Interaction):
+        member_lines = []
+        for i, member in enumerate(self.members):
+            uid = member.get("account_id") or member.get("uid", "Unknown")
+            nickname = member.get("nickname", f"UID: {uid}")
+            member_lines.append(f"{i+1:2d}. {nickname} ({uid})")
+
+        embed = discord.Embed(
+            title="👥 Guild Member List",
+            description=f"Full member list for **{self.guild_name}**",
+            color=discord.Color.blue(),
+            timestamp=datetime.utcnow()
+        )
+
+        # Split members into chunks to stay under Discord's 1024 character limit per field
+        chunk_size = 20  # About 20 members per field to stay safe
+        member_chunks = [member_lines[i:i + chunk_size] for i in range(0, len(member_lines), chunk_size)]
+
+        for idx, chunk in enumerate(member_chunks):
+            field_name = "Members" if len(member_chunks) == 1 else f"Members (Part {idx + 1})"
+            field_value = "```\n" + "\n".join(chunk) + "\n```"
+
+            # Ensure field value doesn't exceed 1024 characters
+            if len(field_value) > 1024:
+                # Truncate if still too long
+                truncated_chunk = chunk[:15]  # Show fewer members
+                field_value = "```\n" + "\n".join(truncated_chunk) + f"\n... and {len(chunk) - 15} more\n```"
+
+            embed.add_field(
+                name=field_name,
+                value=field_value,
+                inline=False
+            )
+
+        await interaction.response.send_message(embed=embed)
 
 
 def is_head_commander(interaction: discord.Interaction) -> bool:
@@ -240,7 +290,7 @@ class GuildMonitoringCog(commands.Cog):
 
         # Register the guild for the specified channel with its access token
         try:
-            success = register_channel_guild(channel_id_int, guild_id, access_token, interaction.user.id)
+            success = register_channel_guild(channel_id_int, guild_id, access_token, interaction.user.id, guild_name)
             if not success:
                 await interaction.followup.send("❌ Failed to register guild.", ephemeral=True)
                 return
@@ -411,9 +461,9 @@ class GuildMonitoringCog(commands.Cog):
         except Exception as e:
             print(f"Error sending guild status: {e}")
 
-    @app_commands.command(name="guild_members", description="View current guild members")
+    @app_commands.command(name="guild_members", description="View current guild members with guild information")
     async def guild_members(self, interaction: discord.Interaction):
-        """Show current members of the monitored guild"""
+        """Show current members of the monitored guild with guild details"""
         try:
             await interaction.response.defer()
         except (discord.errors.NotFound, discord.errors.HTTPException):
@@ -427,6 +477,9 @@ class GuildMonitoringCog(commands.Cog):
             await interaction.followup.send("❌ No guild registered for this channel.", ephemeral=True)
             return
 
+        guild_name = get_channel_guild_name(interaction.channel.id) or "Unknown Guild"
+        registered_by_id = get_channel_registered_by(interaction.channel.id)
+        registered_by = f"<@{registered_by_id}>" if registered_by_id else "Unknown"
         access_token = get_channel_access_token(interaction.channel.id)
         if not access_token:
             await interaction.followup.send("❌ Guild access not configured for this channel.", ephemeral=True)
@@ -440,24 +493,41 @@ class GuildMonitoringCog(commands.Cog):
                 await interaction.followup.send("❌ No members found in guild.", ephemeral=True)
                 return
 
-            # Create CSV format
-            csv_lines = ["Nickname,UID"]
-            for member in members:
-                uid = member.get("account_id") or member.get("uid", "Unknown")
-                nickname = member.get("nickname", f"UID: {uid}")
-                # Escape commas in nickname
-                nickname = nickname.replace(",", ";")
-                csv_lines.append(f"{nickname},{uid}")
+            changes = get_channel_recent_changes(interaction.channel.id, 50)
+            joined = [change for change in changes if change["change_type"] == "joined"]
+            left = [change for change in changes if change["change_type"] == "left"]
 
-            csv_content = "\n".join(csv_lines)
+            def format_change_list(change_items):
+                if not change_items:
+                    return "```csv\nName,UID\n```"
+                lines = ["Name,UID"]
+                for change in change_items[:10]:
+                    name = change["nickname"] or f"UID: {change['uid']}"
+                    lines.append(f"{name},{change['uid']}")
+                if len(change_items) > 10:
+                    lines.append(f"... and {len(change_items) - 10} more")
+                return "```csv\n" + "\n".join(lines) + "\n```"
 
-            # Send as code block for better formatting
-            if len(csv_content) <= 1900:  # Leave some margin
-                await interaction.followup.send(f"```\n{csv_content}\n```")
-            else:
-                # Truncate if too long
-                truncated_csv = "\n".join(csv_lines[:50])  # First 50 members
-                await interaction.followup.send(f"```\n{truncated_csv}\n```\n... and {len(members) - 50} more members")
+            embed = discord.Embed(
+                title="👥 Guild Members",
+                description=f"Guild details and update summary for **{guild_name}**",
+                color=discord.Color.blue(),
+                timestamp=datetime.utcnow()
+            )
+
+            embed.add_field(name="🆔 Guild ID", value=f"`{guild_id}`", inline=True)
+            embed.add_field(name="🏷️ Guild Name", value=guild_name, inline=True)
+            embed.add_field(name="🛠️ Registered By", value=registered_by, inline=True)
+            embed.add_field(name="👤 Current Members", value=str(len(members)), inline=True)
+            embed.add_field(name="✅ Joined", value=format_change_list(joined), inline=False)
+            embed.add_field(name="❌ Left", value=format_change_list(left), inline=False)
+            embed.add_field(name="🔄 Name Changes", value="No name changes recorded.", inline=False)
+
+            if interaction.guild and interaction.guild.icon:
+                embed.set_thumbnail(url=interaction.guild.icon.url)
+
+            view = GuildMembersView(members, guild_name, guild_id)
+            await interaction.followup.send(embed=embed, view=view)
 
         except Exception as e:
             await interaction.followup.send(f"❌ Failed to fetch members: {e}", ephemeral=True)
@@ -587,10 +657,10 @@ class GuildMonitoringCog(commands.Cog):
         except Exception as e:
             await interaction.followup.send(f"❌ Failed to fetch guild updates: {e}", ephemeral=True)
 
-    @app_commands.command(name="guild_changes", description="View recent membership changes")
-    @app_commands.describe(limit="Number of changes to show (max 50)")
-    async def guild_changes(self, interaction: discord.Interaction, limit: int = 20):
-        """Show recent membership changes for this channel's guild"""
+    @app_commands.command(name="guild_changes", description="View all current guild members with detailed data")
+    @app_commands.describe(limit="Number of members to show per page (max 50)", csv_export="Export as CSV file")
+    async def guild_changes(self, interaction: discord.Interaction, limit: int = 20, csv_export: bool = False):
+        """Show all current guild members with detailed information including UID, name, and join dates"""
         try:
             await interaction.response.defer()
         except (discord.errors.NotFound, discord.errors.HTTPException):
@@ -599,49 +669,122 @@ class GuildMonitoringCog(commands.Cog):
             except:
                 return
 
-        limit = min(limit, 50)  # Cap at 50
+        limit = min(limit, 50)  # Cap at 50 per page
 
-        changes = get_channel_recent_changes(interaction.channel.id, limit)
-
-        if not changes:
-            await interaction.followup.send("📭 No membership changes recorded yet.", ephemeral=True)
+        guild_id = self.get_channel_guild_id(interaction.channel.id)
+        if not guild_id:
+            await interaction.followup.send("❌ No guild registered for this channel.", ephemeral=True)
             return
 
-        embed = discord.Embed(
-            title="📊 Recent Guild Changes",
-            description=f"Latest membership activity for {interaction.channel.mention}",
-            color=discord.Color.blurple(),
-            timestamp=datetime.utcnow()
-        )
+        access_token = get_channel_access_token(interaction.channel.id)
+        if not access_token:
+            await interaction.followup.send("❌ Guild access not configured for this channel.", ephemeral=True)
+            return
 
-        joined_count = sum(1 for c in changes if c["change_type"] == "joined")
-        left_count = sum(1 for c in changes if c["change_type"] == "left")
+        try:
+            # Fetch current members from API
+            api_response = fetch_member_guild(access_token, timeout=10)
+            members = api_response.get("members", [])
 
-        embed.add_field(name="✅ Joined", value=str(joined_count), inline=True)
-        embed.add_field(name="❌ Left", value=str(left_count), inline=True)
-        embed.add_field(name="📊 Total Changes", value=str(len(changes)), inline=True)
+            if not members:
+                await interaction.followup.send("❌ No members found in guild.", ephemeral=True)
+                return
 
-        change_list = []
-        for change in changes[:10]:
-            emoji = "✅" if change["change_type"] == "joined" else "❌"
-            nickname = change["nickname"] or f"UID: {change['uid']}"
-            timestamp = change["timestamp"].split("T")[0]
-            change_list.append(f"{emoji} **{nickname}** — {timestamp}")
+            # Get recent changes for join dates
+            changes = get_channel_recent_changes(interaction.channel.id, 1000)  # Get more changes to find join dates
 
-        if change_list:
-            embed.add_field(
-                name="Recent Activity",
-                value="\n".join(change_list),
-                inline=False
-            )
+            # Create member data with join dates
+            member_data = []
+            for member in members:
+                uid = member.get("account_id") or member.get("uid", "Unknown")
+                nickname = member.get("nickname", f"UID: {uid}")
 
-        if interaction.guild and interaction.guild.icon:
-            embed.set_thumbnail(url=interaction.guild.icon.url)
+                # Find join date from changes
+                join_date = None
+                for change in changes:
+                    if change["uid"] == uid and change["change_type"] == "joined":
+                        join_date = change["timestamp"]
+                        break
 
-        if len(changes) > 10:
-            embed.set_footer(text=f"Showing 10 of {len(changes)} changes")
+                member_data.append({
+                    "nickname": nickname,
+                    "uid": uid,
+                    "join_date": join_date
+                })
 
-        await interaction.followup.send(embed=embed)
+            # Sort by join date (newest first), then by name
+            member_data.sort(key=lambda x: (x["join_date"] or "9999-99-99", x["nickname"]))
+
+            if csv_export:
+                # Create CSV content
+                import io
+                csv_lines = ["Nickname,UID,Join Date"]
+                for member in member_data:
+                    join_date = member["join_date"].split("T")[0] if member["join_date"] else "Unknown"
+                    # Escape commas in nickname
+                    nickname = member["nickname"].replace(",", ";")
+                    csv_lines.append(f"{nickname},{member['uid']},{join_date}")
+
+                csv_content = "\n".join(csv_lines)
+                csv_file = discord.File(io.BytesIO(csv_content.encode("utf-8")), filename="guild_members.csv")
+                await interaction.followup.send("📊 Guild members exported as CSV:", file=csv_file)
+                return
+
+            # Create paginated embeds
+            pages = []
+            total_pages = math.ceil(len(member_data) / limit)
+
+            for page_num in range(total_pages):
+                start_idx = page_num * limit
+                end_idx = min(start_idx + limit, len(member_data))
+                page_members = member_data[start_idx:end_idx]
+
+                embed = discord.Embed(
+                    title="👥 Guild Members",
+                    description=f"All current members of {interaction.channel.mention} (Page {page_num + 1}/{total_pages})",
+                    color=discord.Color.green(),
+                    timestamp=datetime.utcnow()
+                )
+
+                embed.add_field(name="📊 Total Members", value=str(len(member_data)), inline=True)
+                embed.add_field(name="📄 Showing", value=f"{start_idx + 1}-{end_idx}", inline=True)
+                embed.add_field(name="🆔 Guild ID", value=f"`{guild_id}`", inline=True)
+
+                member_list = []
+                for member in page_members:
+                    join_date = "Unknown"
+                    if member["join_date"]:
+                        try:
+                            dt = datetime.fromisoformat(member["join_date"].replace('Z', '+00:00'))
+                            join_date = dt.strftime("%Y-%m-%d")
+                        except:
+                            join_date = member["join_date"].split("T")[0]
+
+                    member_list.append(f"**{member['nickname']}**\n🆔 `{member['uid']}` • 📅 {join_date}")
+
+                if member_list:
+                    embed.add_field(
+                        name="Members",
+                        value="\n\n".join(member_list),
+                        inline=False
+                    )
+
+                if interaction.guild and interaction.guild.icon:
+                    embed.set_thumbnail(url=interaction.guild.icon.url)
+
+                embed.set_footer(text=f"Page {page_num + 1}/{total_pages} • Use Previous/Next to navigate • Set csv_export=true for CSV download")
+                pages.append(embed)
+
+            if not pages:
+                await interaction.followup.send("📭 No members found.", ephemeral=True)
+                return
+
+            # Send first page with navigation
+            view = GuildUpdatesView(pages)
+            await interaction.followup.send(embed=pages[0], view=view)
+
+        except Exception as e:
+            await interaction.followup.send(f"❌ Failed to fetch member data: {e}", ephemeral=True)
 
     @app_commands.command(name="ban_player", description="Ban a player from the guild (Commanders only)")
     @app_commands.describe(uid="Player UID to ban", reason="Reason for ban")

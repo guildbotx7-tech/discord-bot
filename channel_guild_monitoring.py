@@ -36,6 +36,18 @@ def init_channel_monitoring_db():
     except Exception as e:
         print(f"⚠️ Migration warning: {e}")
 
+    # Migration: Add guild_name column if it doesn't exist
+    try:
+        cursor.execute("PRAGMA table_info(channel_guilds)")
+        columns = [column[1] for column in cursor.fetchall()]
+        if "guild_name" not in columns:
+            print("🔄 Migrating database: Adding guild_name column to channel_guilds...")
+            cursor.execute("ALTER TABLE channel_guilds ADD COLUMN guild_name TEXT")
+            conn.commit()
+            print("✅ Migration complete: guild_name column added")
+    except Exception as e:
+        print(f"⚠️ Migration warning: {e}")
+
     # Guild snapshots (per channel)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS channel_snapshots (
@@ -97,15 +109,46 @@ def get_channel_guild_id(channel_id):
     except:
         return None
 
-
-def register_channel_guild(channel_id, guild_id, access_token, registered_by):
-    """Register a guild for monitoring in a specific channel with its access token"""
+def get_channel_guild_name(channel_id):
+    """Get the guild name registered for a specific channel"""
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT OR REPLACE INTO channel_guilds (channel_id, guild_id, access_token, registered_by, registered_at) VALUES (?, ?, ?, ?, ?)",
-            (channel_id, guild_id, access_token, registered_by, datetime.utcnow().isoformat())
+            "SELECT guild_name FROM channel_guilds WHERE channel_id = ?",
+            (channel_id,)
+        )
+        result = cursor.fetchone()
+        conn.close()
+        return result[0] if result else None
+    except:
+        return None
+
+
+def get_channel_registered_by(channel_id):
+    """Get the Discord user ID that registered the guild for a channel"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT registered_by FROM channel_guilds WHERE channel_id = ?",
+            (channel_id,)
+        )
+        result = cursor.fetchone()
+        conn.close()
+        return int(result[0]) if result and result[0] is not None else None
+    except:
+        return None
+
+
+def register_channel_guild(channel_id, guild_id, access_token, registered_by, guild_name=None):
+    """Register a guild for monitoring in a specific channel with its access token and name"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT OR REPLACE INTO channel_guilds (channel_id, guild_id, access_token, registered_by, registered_at, guild_name) VALUES (?, ?, ?, ?, ?, ?)",
+            (channel_id, guild_id, access_token, registered_by, datetime.utcnow().isoformat(), guild_name)
         )
         conn.commit()
         conn.close()
@@ -211,9 +254,10 @@ def cache_member_data(uid, data):
 
 
 def monitor_channel_guild(channel_id):
-    """Monitor guild membership changes for a specific channel"""
+    """Monitor guild membership changes for a specific channel with double-check verification"""
     try:
         from member_guild_api import fetch_member_guild, detect_list_changes
+        import time
 
         guild_id = get_channel_guild_id(channel_id)
         access_token = get_channel_access_token(channel_id)
@@ -221,27 +265,46 @@ def monitor_channel_guild(channel_id):
         if not guild_id or not access_token:
             return {"status": "error", "error": "No guild registered for this channel"}
 
-        # Fetch current member list
-        api_response = fetch_member_guild(access_token, timeout=10)
-        current_members = api_response.get("members", [])
+        # First API call
+        api_response_1 = fetch_member_guild(access_token, timeout=10)
+        current_members_1 = api_response_1.get("members", [])
 
-        if not current_members:
-            return {"status": "error", "error": "Failed to fetch current member list or guild is empty"}
+        if not current_members_1:
+            return {"status": "error", "error": "Failed to fetch current member list or guild is empty (first call)"}
+
+        # Wait a short time before second call
+        time.sleep(2)
+
+        # Second API call for verification
+        api_response_2 = fetch_member_guild(access_token, timeout=10)
+        current_members_2 = api_response_2.get("members", [])
+
+        if not current_members_2:
+            return {"status": "error", "error": "Failed to fetch current member list or guild is empty (second call)"}
+
+        # Extract UIDs from both calls
+        current_uids_1 = set(m.get("account_id") for m in current_members_1 if m.get("account_id"))
+        current_uids_2 = set(m.get("account_id") for m in current_members_2 if m.get("account_id"))
+
+        # Verify both calls return consistent data
+        if current_uids_1 != current_uids_2:
+            return {"status": "error", "error": "API inconsistency detected - member lists differ between calls"}
+
+        # Use the second call's data for processing (most recent)
+        current_members = current_members_2
+        current_uids = current_uids_2
 
         # Cache member data and get UIDs
-        current_uids = set()
         for member in current_members:
             account_id = member.get("account_id")
             if account_id:
-                # Store the account_id as the UID
-                current_uids.add(account_id)
                 cache_member_data(account_id, member)
 
         # Get previous snapshot
         previous_uids = get_channel_last_list(channel_id)
 
         # Detect changes
-        changes = detect_list_changes(previous_uids, current_uids)
+        changes = detect_list_changes(current_uids, previous_uids)
         changes["joined"] = list(changes["joined"])
         changes["left"] = list(changes["left"])
 

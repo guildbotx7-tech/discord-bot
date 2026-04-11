@@ -35,8 +35,8 @@ The guild monitoring is automatically loaded when you start your bot. No additio
 ### Public Commands
 
 - `/guild_status` - Check if the current channel has a registered guild
-- `/guild_members` - View current members of the monitored guild
-- `/guild_changes [limit]` - View recent membership changes (default: 20, max: 50)
+- `/guild_members` - View current members of the monitored guild with guild ID, name, and member count
+- `/guild_changes [limit] [csv_export]` - View all current guild members with detailed data (default: 20 per page, max: 50, optional CSV export)
 
 ## How It Works
 
