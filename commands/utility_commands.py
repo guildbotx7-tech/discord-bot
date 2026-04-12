@@ -3,6 +3,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from helpers import is_commander, set_log_channel_async, get_log_channel_async, safe_send, log_action
+from version import increment_version, get_version_string
 
 
 class HelpView(discord.ui.View):
@@ -119,6 +120,34 @@ class UtilityCommands(commands.Cog):
     async def version(self, interaction: discord.Interaction):
         version_value = getattr(self.bot, "version", "unknown")
         await safe_send(interaction, f"🤖 Bot version: `{version_value}`", ephemeral=False)
+
+    @app_commands.command(name="increment_version", description="Increment bot version (Head Commander only)")
+    @app_commands.describe(change_type="Type of change: major, minor, or patch")
+    async def increment_version_cmd(self, interaction: discord.Interaction, change_type: str):
+        # Check if user is head commander
+        if not hasattr(interaction.user, 'roles') or not any(role.name.lower() == "head commander" for role in interaction.user.roles):
+            await safe_send(interaction, "❌ Only Head Commanders can update the bot version.", ephemeral=True)
+            return
+
+        change_type = change_type.lower()
+        if change_type not in ['major', 'minor', 'patch']:
+            await safe_send(interaction, "❌ Invalid change type. Use 'major', 'minor', or 'patch'.", ephemeral=True)
+            return
+
+        try:
+            old_version = get_version_string()
+            new_version_info = increment_version(change_type)
+            new_version = get_version_string()
+
+            # Update bot's version attribute
+            self.bot.version = new_version
+            self.bot.version_info = new_version_info
+
+            await safe_send(interaction, f"✅ Version updated: `{old_version}` → `{new_version}`", ephemeral=False)
+            await log_action(interaction, "Version Updated", f"Updated bot version from {old_version} to {new_version} ({change_type} change)")
+
+        except Exception as e:
+            await safe_send(interaction, f"❌ Failed to update version: {e}", ephemeral=True)
 
     @app_commands.command(name="help", description="Show available commands")
     async def help(self, interaction: discord.Interaction):
