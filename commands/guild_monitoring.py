@@ -175,7 +175,7 @@ class GuildMonitoringCog(commands.Cog):
             for uid in joined_items[:50]:  # Limit to 50 per message
                 member_data = self.get_member_info(uid)
                 name = member_data.get("nickname", f"UID: {uid}") if member_data else f"UID: {uid}"
-                joined_list.append(f"✅ {name}")
+                joined_list.append(f"✅ {name} (UID: {uid})")
 
             embed.add_field(
                 name=f"Joined ({len(joined_items)})",
@@ -189,7 +189,7 @@ class GuildMonitoringCog(commands.Cog):
             for uid in left_items[:5]:  # Limit to 5 per message
                 member_data = self.get_member_info(uid)
                 name = member_data.get("nickname", f"UID: {uid}") if member_data else f"UID: {uid}"
-                left_list.append(f"❌ {name}")
+                left_list.append(f"❌ {name} (UID: {uid})")
 
             embed.add_field(
                 name=f"Left ({len(left_items)})",
