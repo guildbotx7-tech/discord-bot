@@ -19,6 +19,9 @@ GUILD_ID = os.getenv("GUILD_ID")  # optional for instant guild-level slash comma
 # Import version management
 from version import get_current_version, get_version_string
 
+# Import MongoDB connection
+from mongodb import connect_mongodb, close_mongodb
+
 # Bot versioning follows semantic style: major.minor.patch
 # - major: breaking or very major updates
 # - minor: new features, command additions, or medium updates
@@ -42,7 +45,10 @@ class MyBot(commands.Bot):
         """Load all command cogs at startup"""
         # Initialize databases
         init_channel_monitoring_db()
-        print("✅ Database initialized")
+        print("✅ SQLite Database initialized")
+        
+        # Initialize MongoDB connection
+        connect_mongodb()
         
         # Load cogs from commands folder
         await self.load_cog('commands.member_commands')
@@ -81,6 +87,12 @@ bot = MyBot()
 async def on_ready():
     print(f"✅ Bot is ready. Logged in as {bot.user}")
     print(f"🎮 Active in {len(bot.guilds)} guild(s)")
+
+@bot.event
+async def on_error(event, *args, **kwargs):
+    """Handle bot errors and close MongoDB on critical failure"""
+    print(f"❌ Error in {event}: {args} {kwargs}")
+    close_mongodb()
 
 @bot.event
 async def on_app_command_error(interaction: discord.Interaction, error):
