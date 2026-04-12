@@ -23,7 +23,7 @@ class CleanupCommands(commands.Cog):
             else:
                 print(f"⚠️ prune: HTTPException while deferring: {e}")
 
-        if not is_commander(interaction):
+        if not is_commander(interaction) and interaction.user.id != self.bot.owner_id:
             await safe_send(interaction, "You don't have permission to prune messages.", ephemeral=True)
             await log_action(interaction, "Permission Denied", f"{interaction.user.mention} attempted /prune without permission.")
             return
@@ -48,7 +48,7 @@ class CleanupCommands(commands.Cog):
             else:
                 print(f"⚠️ pruneuser: HTTPException while deferring: {e}")
 
-        if not is_commander(interaction):
+        if not is_commander(interaction) and interaction.user.id != self.bot.owner_id:
             await safe_send(interaction, "You don't have permission to prune messages.", ephemeral=True)
             await log_action(interaction, "Permission Denied", f"{interaction.user.mention} attempted /pruneuser without permission.")
             return

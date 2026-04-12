@@ -14,7 +14,7 @@ class ChannelCommands(commands.Cog):
     async def lockchannel(self, interaction: discord.Interaction):
         await interaction.response.defer()
         
-        if not is_commander(interaction):
+        if not is_commander(interaction) and interaction.user.id != self.bot.owner_id:
             await interaction.followup.send("Only Commanders can lock channels.", ephemeral=True)
             await log_action(interaction, "Permission Denied", f"{interaction.user.mention} attempted /lockchannel without permission.")
             return
@@ -28,7 +28,7 @@ class ChannelCommands(commands.Cog):
     async def unlockchannel(self, interaction: discord.Interaction):
         await interaction.response.defer()
         
-        if not is_commander(interaction):
+        if not is_commander(interaction) and interaction.user.id != self.bot.owner_id:
             await interaction.followup.send("Only Commanders can unlock channels.", ephemeral=True)
             await log_action(interaction, "Permission Denied", f"{interaction.user.mention} attempted /unlockchannel without permission.")
             return

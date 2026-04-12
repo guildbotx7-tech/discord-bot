@@ -21,7 +21,7 @@ class MemberCommands(commands.Cog):
 
     @app_commands.command(name="setguild", description="Store guild member list")
     async def setguild(self, interaction: discord.Interaction, text: str):
-        if not is_commander(interaction):
+        if not is_commander(interaction) and interaction.user.id != self.bot.owner_id:
             await safe_send(interaction, "You don't have permission.", ephemeral=True)
             await log_action(interaction, "Permission Denied", f"{interaction.user.mention} attempted /setguild without permission.")
             return
@@ -33,7 +33,7 @@ class MemberCommands(commands.Cog):
 
     @app_commands.command(name="setbound", description="Store bound member list")
     async def setbound(self, interaction: discord.Interaction, text: str):
-        if not is_commander(interaction):
+        if not is_commander(interaction) and interaction.user.id != self.bot.owner_id:
             await safe_send(interaction, "You don't have permission.", ephemeral=True)
             await log_action(interaction, "Permission Denied", f"{interaction.user.mention} attempted /setbound without permission.")
             return
@@ -45,7 +45,7 @@ class MemberCommands(commands.Cog):
 
     @app_commands.command(name="notbind", description="Show guild members not yet bound")
     async def notbind(self, interaction: discord.Interaction):
-        if not is_commander(interaction):
+        if not is_commander(interaction) and interaction.user.id != self.bot.owner_id:
             await safe_send(interaction, "You don't have permission.", ephemeral=True)
             await log_action(interaction, "Permission Denied", f"{interaction.user.mention} attempted /notbind without permission.")
             return
@@ -65,7 +65,7 @@ class MemberCommands(commands.Cog):
 
     @app_commands.command(name="missing_player", description="Show bound members not in guild")
     async def missing_player(self, interaction: discord.Interaction):
-        if not is_commander(interaction):
+        if not is_commander(interaction) and interaction.user.id != self.bot.owner_id:
             await safe_send(interaction, "You don't have permission.", ephemeral=True)
             await log_action(interaction, "Permission Denied", f"{interaction.user.mention} attempted /missing_player without permission.")
             return
@@ -85,7 +85,7 @@ class MemberCommands(commands.Cog):
 
     @app_commands.command(name="showdata", description="Show stored guild and bound lists")
     async def showdata(self, interaction: discord.Interaction):
-        if not is_commander(interaction):
+        if not is_commander(interaction) and interaction.user.id != self.bot.owner_id:
             await safe_send(interaction, "You don't have permission.", ephemeral=True)
             await log_action(interaction, "Permission Denied", f"{interaction.user.mention} attempted /showdata without permission.")
             return
@@ -104,7 +104,7 @@ class MemberCommands(commands.Cog):
 
     @app_commands.command(name="update", description="Update a player's name in guild or bound list")
     async def update(self, interaction: discord.Interaction, list_type: str, player_id: str, new_name: str):
-        if not is_commander(interaction):
+        if not is_commander(interaction) and interaction.user.id != self.bot.owner_id:
             await safe_send(interaction, "You don't have permission.", ephemeral=True)
             await log_action(interaction, "Permission Denied", f"{interaction.user.mention} attempted /update without permission.")
             return
@@ -131,7 +131,7 @@ class MemberCommands(commands.Cog):
 
     @app_commands.command(name="clear", description="Clear stored guild and bound lists")
     async def clear(self, interaction: discord.Interaction):
-        if not is_commander(interaction):
+        if not is_commander(interaction) and interaction.user.id != self.bot.owner_id:
             await safe_send(interaction, "You don't have permission.", ephemeral=True)
             await log_action(interaction, "Permission Denied", f"{interaction.user.mention} attempted /clear without permission.")
             return
@@ -142,7 +142,7 @@ class MemberCommands(commands.Cog):
 
     @app_commands.command(name="count", description="Show counts of guild and bound lists")
     async def count(self, interaction: discord.Interaction):
-        if not is_commander(interaction):
+        if not is_commander(interaction) and interaction.user.id != self.bot.owner_id:
             await safe_send(interaction, "You don't have permission.", ephemeral=True)
             await log_action(interaction, "Permission Denied", f"{interaction.user.mention} attempted /count without permission.")
             return

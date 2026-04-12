@@ -79,7 +79,7 @@ class UtilityCommands(commands.Cog):
 
     @app_commands.command(name="setlogchannel", description="Set the log channel for bot actions (Commanders only)")
     async def setlogchannel(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        if not is_commander(interaction):
+        if not is_commander(interaction) and interaction.user.id != self.bot.owner_id:
             await safe_send(interaction, "Only Commanders can set the log channel.", ephemeral=True)
             await log_action(interaction, "Permission Denied", f"{interaction.user.mention} attempted /setlogchannel without permission.")
             return
@@ -87,12 +87,8 @@ class UtilityCommands(commands.Cog):
         await safe_send(interaction, f"✅ Log channel set to {channel.mention}", ephemeral=True)
         await log_action(interaction, "Log Channel Updated", f"{interaction.user.mention} set the log channel to {channel.mention}.")
 
-    @app_commands.command(name="getlogchannel", description="Show the current log channel (Commanders only)")
+    @app_commands.command(name="getlogchannel", description="Show the current log channel")
     async def getlogchannel(self, interaction: discord.Interaction):
-        if not is_commander(interaction):
-            await safe_send(interaction, "Only Commanders can view the log channel.", ephemeral=True)
-            await log_action(interaction, "Permission Denied", f"{interaction.user.mention} attempted /getlogchannel without permission.")
-            return
         log_channel_id = await get_log_channel_async(interaction.guild_id)
         if not log_channel_id:
             await safe_send(interaction, "No log channel set yet. Use `/setlogchannel` to set one.", ephemeral=True)
@@ -109,10 +105,6 @@ class UtilityCommands(commands.Cog):
     @app_commands.command(name="pingdb", description="Check database connection status")
     async def pingdb(self, interaction: discord.Interaction):
         """Utility: Ping DB status"""
-        if not is_commander(interaction):
-            await safe_send(interaction, "You don't have permission.", ephemeral=True)
-            await log_action(interaction, "Permission Denied", f"{interaction.user.mention} attempted /pingdb without permission.")
-            return
         await safe_send(interaction, "Database is connected (SQLite).", ephemeral=True)
         await log_action(interaction, "Database Ping", f"{interaction.user.mention} pinged the database - Connected.")
 

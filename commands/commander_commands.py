@@ -14,7 +14,7 @@ class CommanderCommands(commands.Cog):
     async def addcommander(self, interaction: discord.Interaction, member: discord.Member):
         await interaction.response.defer()
         
-        if not is_commander(interaction):
+        if not is_commander(interaction) and interaction.user.id != self.bot.owner_id:
             await interaction.followup.send("Only Commanders can add Commanders.", ephemeral=True)
             await log_action(interaction, "Permission Denied", f"{interaction.user.mention} attempted /addcommander without permission.")
             return
@@ -27,7 +27,7 @@ class CommanderCommands(commands.Cog):
         await log_action(interaction, "Commander Added", f"{member.mention} has been promoted to Commander.")
     @app_commands.command(name="removecommander", description="Remove Commander role from a user (Commanders only)")
     async def removecommander(self, interaction: discord.Interaction, member: discord.Member):
-        if not is_commander(interaction):
+        if not is_commander(interaction) and interaction.user.id != self.bot.owner_id:
             await interaction.response.send_message("Only Commanders can remove Commanders.", ephemeral=True)
             await log_action(interaction, "Permission Denied", f"{interaction.user.mention} attempted /removecommander without permission.")
             await interaction.response.send_message("Only Admins can remove Commanders.", ephemeral=True)
@@ -42,7 +42,7 @@ class CommanderCommands(commands.Cog):
 
     @app_commands.command(name="listcommanders", description="List all users with the Commander role")
     async def listcommanders(self, interaction: discord.Interaction):
-        if not is_commander(interaction):
+        if not is_commander(interaction) and interaction.user.id != self.bot.owner_id:
             await interaction.response.send_message("Only Commanders can list Commanders.", ephemeral=True)
             await log_action(interaction, "Permission Denied", f"{interaction.user.mention} attempted /listcommanders without permission.")
             return
