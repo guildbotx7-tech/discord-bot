@@ -16,6 +16,16 @@ load_dotenv()
 TOKEN = os.getenv("TOKEN")
 GUILD_ID = os.getenv("GUILD_ID")  # optional for instant guild-level slash command registration
 
+# Bot versioning follows semantic style: major.minor.patch
+# - major: breaking or very major updates
+# - minor: new features, command additions, or medium updates
+# - patch: bug fixes and small improvements
+# Reset lower values when the next higher value changes
+BOT_VERSION_MAJOR = 2
+BOT_VERSION_MINOR = 18
+BOT_VERSION_PATCH = 7
+BOT_VERSION = f"{BOT_VERSION_MAJOR}.{BOT_VERSION_MINOR}.{BOT_VERSION_PATCH}"
+
 class MyBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
@@ -23,6 +33,8 @@ class MyBot(commands.Bot):
         intents.members = True
         super().__init__(command_prefix="!", intents=intents)
         self.owner_id = 1304326261241413664  # Set bot owner ID
+        self.version = BOT_VERSION
+        self.version_info = (BOT_VERSION_MAJOR, BOT_VERSION_MINOR, BOT_VERSION_PATCH)
         self.ID_RE = re.compile(r"\b(\d{6,20})\b")
 
     async def setup_hook(self):

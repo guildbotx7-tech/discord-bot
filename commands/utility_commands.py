@@ -11,10 +11,23 @@ class HelpView(discord.ui.View):
         self.command_sections = command_sections
         self.page = 0
         self.total_pages = len(command_sections)
+
+        options = [
+            discord.SelectOption(label=section_title, value=str(index))
+            for index, (section_title, _) in enumerate(command_sections)
+        ]
+        self.section_select = discord.ui.Select(placeholder="Jump to section", options=options)
+        self.section_select.callback = self.select_page
+        self.add_item(self.section_select)
+
         self.update_buttons()
 
     def update_buttons(self):
+        # Keep the section select at the top and refresh navigation buttons below it.
+        existing_select = self.section_select
         self.clear_items()
+        self.add_item(existing_select)
+
         if self.page > 0:
             prev_button = discord.ui.Button(label="Previous", style=discord.ButtonStyle.primary)
             prev_button.callback = self.prev_page
@@ -34,6 +47,12 @@ class HelpView(discord.ui.View):
         self.update_buttons()
         await self.update_message(interaction)
 
+    async def select_page(self, interaction: discord.Interaction):
+        if interaction.data and "values" in interaction.data and interaction.data["values"]:
+            self.page = int(interaction.data["values"][0])
+        self.update_buttons()
+        await self.update_message(interaction)
+
     def get_page_content(self):
         section_title, commands = self.command_sections[self.page]
         content = f"**{section_title}**\n" + "\n".join(commands)
@@ -46,7 +65,7 @@ class HelpView(discord.ui.View):
             description=content,
             color=discord.Color.blue()
         )
-        embed.set_footer(text="Use Previous/Next buttons to navigate")
+        embed.set_footer(text="Use Previous/Next buttons or jump to a section")
 
         await interaction.response.edit_message(embed=embed, view=self)
 
@@ -95,6 +114,12 @@ class UtilityCommands(commands.Cog):
             return
         await safe_send(interaction, "Database is connected (SQLite).", ephemeral=True)
         await log_action(interaction, "Database Ping", f"{interaction.user.mention} pinged the database - Connected.")
+
+    @app_commands.command(name="version", description="Show the current bot version")
+    async def version(self, interaction: discord.Interaction):
+        version_value = getattr(self.bot, "version", "unknown")
+        await safe_send(interaction, f"🤖 Bot version: `{version_value}`", ephemeral=False)
+
     @app_commands.command(name="help", description="Show available commands")
     async def help(self, interaction: discord.Interaction):
         if not is_commander(interaction):
@@ -159,7 +184,8 @@ class UtilityCommands(commands.Cog):
             ("📊 Logging Commands", [
                 "  • `/setlogchannel <channel>` – Set log channel",
                 "  • `/getlogchannel` – View log channel",
-                "  • `/pingdb` – Check database connection"
+                "  • `/pingdb` – Check database connection",
+                "  • `/version` – Show current bot version"
             ]),
             ("🔥 Guild Monitoring Commands", [
                 "  • `/register_guild` – Register guild for monitoring",

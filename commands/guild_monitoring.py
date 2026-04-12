@@ -56,16 +56,53 @@ class GuildUpdatesView(discord.ui.View):
         await interaction.response.edit_message(embed=self.pages[self.page], view=self)
 
 
+class LogsView(discord.ui.View):
+    def __init__(self, pages):
+        super().__init__(timeout=300)
+        self.pages = pages
+        self.page = 0
+        self.update_buttons()
+
+    def update_buttons(self):
+        self.clear_items()
+        if self.page > 0:
+            prev_button = discord.ui.Button(label="Previous", style=discord.ButtonStyle.secondary)
+            prev_button.callback = self.prev_page
+            self.add_item(prev_button)
+        if self.page < len(self.pages) - 1:
+            next_button = discord.ui.Button(label="Next", style=discord.ButtonStyle.secondary)
+            next_button.callback = self.next_page
+            self.add_item(next_button)
+
+    async def prev_page(self, interaction: discord.Interaction):
+        self.page -= 1
+        self.update_buttons()
+        await self.update_message(interaction)
+
+    async def next_page(self, interaction: discord.Interaction):
+        self.page += 1
+        self.update_buttons()
+        await self.update_message(interaction)
+
+    async def update_message(self, interaction: discord.Interaction):
+        await interaction.response.edit_message(embed=self.pages[self.page], view=self)
+
+
 class GuildMembersView(discord.ui.View):
-    def __init__(self, members, guild_name, guild_id):
+    def __init__(self, members, guild_name, guild_id, changes=None):
         super().__init__(timeout=300)
         self.members = members
         self.guild_name = guild_name
         self.guild_id = guild_id
+        self.changes = changes or []
 
         members_button = discord.ui.Button(label="Members", style=discord.ButtonStyle.primary)
         members_button.callback = self.show_members
         self.add_item(members_button)
+
+        logs_button = discord.ui.Button(label="Logs", style=discord.ButtonStyle.secondary)
+        logs_button.callback = self.show_logs
+        self.add_item(logs_button)
 
     async def show_members(self, interaction: discord.Interaction):
         member_lines = []
@@ -82,11 +119,10 @@ class GuildMembersView(discord.ui.View):
         )
 
         # Split members into chunks to stay under Discord's 1024 character limit per field
-        chunk_size = 20  # About 20 members per field to stay safe
+        chunk_size = 28  # About 28 members per field
         member_chunks = [member_lines[i:i + chunk_size] for i in range(0, len(member_lines), chunk_size)]
 
         for idx, chunk in enumerate(member_chunks):
-            field_name = "Members" if len(member_chunks) == 1 else f"Members (Part {idx + 1})"
             field_value = "```\n" + "\n".join(chunk) + "\n```"
 
             # Ensure field value doesn't exceed 1024 characters
@@ -96,12 +132,65 @@ class GuildMembersView(discord.ui.View):
                 field_value = "```\n" + "\n".join(truncated_chunk) + f"\n... and {len(chunk) - 15} more\n```"
 
             embed.add_field(
-                name=field_name,
+                name="Members",
                 value=field_value,
                 inline=False
             )
 
         await interaction.response.send_message(embed=embed)
+
+    async def show_logs(self, interaction: discord.Interaction):
+        """Show all join/leave logs with pagination if needed"""
+        if not self.changes:
+            embed = discord.Embed(
+                title="📋 Guild Activity Logs",
+                description=f"Recent activity for **{self.guild_name}**",
+                color=discord.Color.blue(),
+                timestamp=datetime.utcnow()
+            )
+            embed.add_field(
+                name="Activity",
+                value="No activity recorded.",
+                inline=False
+            )
+            await interaction.response.send_message(embed=embed)
+            return
+
+        # Split logs into chunks of 10 per page
+        chunk_size = 10
+        log_chunks = [self.changes[i:i + chunk_size] for i in range(0, len(self.changes), chunk_size)]
+        pages = []
+
+        for page_index, chunk in enumerate(log_chunks):
+            embed = discord.Embed(
+                title="📋 Guild Activity Logs",
+                description=f"Activity for **{self.guild_name}** (Page {page_index + 1}/{len(log_chunks)})",
+                color=discord.Color.blue(),
+                timestamp=datetime.utcnow()
+            )
+
+            log_lines = []
+            for change in chunk:
+                emoji = "✅" if change["change_type"] == "joined" else "❌"
+                nickname = change["nickname"] or f"UID: {change['uid']}"
+                uid = change["uid"]
+                timestamp = change["timestamp"]
+                log_lines.append(f"{emoji} {nickname} ({uid})\n   {timestamp}")
+
+            log_text = "\n".join(log_lines)
+            embed.add_field(
+                name=f"Activities {page_index * chunk_size + 1}-{page_index * chunk_size + len(chunk)}",
+                value=f"```\n{log_text}\n```",
+                inline=False
+            )
+            embed.set_footer(text=f"Total logs: {len(self.changes)}")
+            pages.append(embed)
+
+        if len(pages) > 1:
+            view = LogsView(pages)
+            await interaction.response.send_message(embed=pages[0], view=view)
+        else:
+            await interaction.response.send_message(embed=pages[0])
 
 
 def is_head_commander(interaction: discord.Interaction) -> bool:
@@ -238,11 +327,6 @@ class GuildMonitoringCog(commands.Cog):
             except:
                 return
 
-        # Restrict to specific channel
-        if interaction.channel.id != 1492394107799208077:
-            await interaction.followup.send("❌ This command can only be used in the designated registration channel.", ephemeral=True)
-            return
-
         if not is_head_commander(interaction):
             await interaction.followup.send("❌ Only Head Commanders or higher roles can register guilds.", ephemeral=True)
             return
@@ -262,6 +346,14 @@ class GuildMonitoringCog(commands.Cog):
                 return
         except Exception as e:
             await interaction.followup.send(f"❌ Error accessing channel: {str(e)}", ephemeral=True)
+            return
+
+        # Reject duplicate registration for the same channel
+        if get_channel_guild_id(channel_id_int):
+            await interaction.followup.send(
+                "❌ A guild is already registered to this channel. Remove the existing registration first or choose another channel.",
+                ephemeral=True
+            )
             return
 
         # Validate access token format (should be a long string)
@@ -494,19 +586,6 @@ class GuildMonitoringCog(commands.Cog):
                 return
 
             changes = get_channel_recent_changes(interaction.channel.id, 50)
-            joined = [change for change in changes if change["change_type"] == "joined"]
-            left = [change for change in changes if change["change_type"] == "left"]
-
-            def format_change_list(change_items):
-                if not change_items:
-                    return "```csv\nName,UID\n```"
-                lines = ["Name,UID"]
-                for change in change_items[:10]:
-                    name = change["nickname"] or f"UID: {change['uid']}"
-                    lines.append(f"{name},{change['uid']}")
-                if len(change_items) > 10:
-                    lines.append(f"... and {len(change_items) - 10} more")
-                return "```csv\n" + "\n".join(lines) + "\n```"
 
             embed = discord.Embed(
                 title="👥 Guild Members",
@@ -519,14 +598,30 @@ class GuildMonitoringCog(commands.Cog):
             embed.add_field(name="🏷️ Guild Name", value=guild_name, inline=True)
             embed.add_field(name="🛠️ Registered By", value=registered_by, inline=True)
             embed.add_field(name="👤 Current Members", value=str(len(members)), inline=True)
-            embed.add_field(name="✅ Joined", value=format_change_list(joined), inline=False)
-            embed.add_field(name="❌ Left", value=format_change_list(left), inline=False)
-            embed.add_field(name="🔄 Name Changes", value="No name changes recorded.", inline=False)
+            embed.add_field(name="📌 Total Changes", value=str(len(changes)), inline=True)
+
+            # Add last 10 logs to main page
+            recent_logs = changes[:10] if changes else []
+            if recent_logs:
+                log_lines = []
+                for change in recent_logs:
+                    emoji = "✅" if change["change_type"] == "joined" else "❌"
+                    nickname = change["nickname"] or f"UID: {change['uid']}"
+                    uid = change["uid"]
+                    timestamp = change["timestamp"]
+                    log_lines.append(f"{emoji} {nickname} ({uid})\n   {timestamp}")
+
+                log_text = "\n".join(log_lines)
+                embed.add_field(
+                    name="Last 10 Activities",
+                    value=f"```\n{log_text}\n```",
+                    inline=False
+                )
 
             if interaction.guild and interaction.guild.icon:
                 embed.set_thumbnail(url=interaction.guild.icon.url)
 
-            view = GuildMembersView(members, guild_name, guild_id)
+            view = GuildMembersView(members, guild_name, guild_id, changes)
             await interaction.followup.send(embed=embed, view=view)
 
         except Exception as e:
@@ -580,79 +675,52 @@ class GuildMonitoringCog(commands.Cog):
                 timestamp = change["timestamp"].split("T")[0]
                 change_lines.append(f"{emoji} {nickname} - {timestamp}")
 
-            member_pages = math.ceil(len(member_lines) / 10) if member_lines else 0
-            change_pages = math.ceil(len(change_lines) / 10) if change_lines else 0
-            pages = []
-            total_pages = 1 + member_pages + change_pages
-
-            summary_embed = discord.Embed(
-                title="📊 Guild Updates",
-                description=f"Live guild summary for {interaction.channel.mention}",
-                color=discord.Color.blurple(),
+            # Create single embed with all members instead of pagination
+            embed = discord.Embed(
+                title="👥 Guild Member List",
+                description=f"Full member list for **{guild_name or 'Unknown Guild'}**",
+                color=discord.Color.blue(),
                 timestamp=datetime.utcnow()
             )
-            summary_embed.add_field(name="Guild ID", value=f"`{guild_id}`", inline=True)
-            summary_embed.add_field(name="Total Members", value=str(len(members)), inline=True)
-            summary_embed.add_field(name="Recent Changes", value=f"{len(changes)}\n✅ {joined_count} Joined\n❌ {left_count} Left", inline=False)
 
-            if member_lines:
-                summary_embed.add_field(
-                    name="Top Members",
-                    value="\n".join(member_lines[:5]) if len(member_lines) <= 5 else "\n".join(member_lines[:5]) + f"\n... and {len(member_lines) - 5} more members",
-                    inline=False
-                )
+            # Add guild info
+            embed.add_field(name="Guild ID", value=f"`{guild_id}`", inline=True)
+            embed.add_field(name="Total Members", value=str(len(members)), inline=True)
+            embed.add_field(name="Recent Changes", value=f"{len(changes)}\n✅ {joined_count} Joined\n❌ {left_count} Left", inline=True)
 
+            # Create single field with all members
+            member_text = "\n".join(f"{i+1}. {line}" for i, line in enumerate(member_lines))
+            field_value = f"```\n{member_text}\n```"
+
+            # Discord allows max 1024 characters per field, but we'll try to fit as many as possible
+            if len(field_value) > 1024:
+                # If too long, truncate gracefully
+                lines = [f"{i+1}. {line}" for i, line in enumerate(member_lines)]
+                while lines and len(f"```\n{'\n'.join(lines)}\n```") > 1024:
+                    lines = lines[:-1]  # Remove last member until it fits
+                field_value = f"```\n{'\n'.join(lines)}\n... and {len(member_lines) - len(lines)} more members\n```"
+
+            embed.add_field(
+                name="Members",
+                value=field_value,
+                inline=False
+            )
+
+            # Add recent changes if any
             if change_lines:
-                summary_embed.add_field(
-                    name="Top Changes",
-                    value="\n".join(change_lines[:5]) if len(change_lines) <= 5 else "\n".join(change_lines[:5]) + f"\n... and {len(change_lines) - 5} more changes",
+                change_text = "\n".join(change_lines[:10])  # Show first 10 changes
+                if len(change_lines) > 10:
+                    change_text += f"\n... and {len(change_lines) - 10} more changes"
+                embed.add_field(
+                    name="Recent Changes",
+                    value=f"```\n{change_text}\n```",
                     inline=False
                 )
-            else:
-                summary_embed.add_field(name="Recent Activity", value="No recent changes recorded.", inline=False)
 
             if interaction.guild and interaction.guild.icon:
-                summary_embed.set_thumbnail(url=interaction.guild.icon.url)
+                embed.set_thumbnail(url=interaction.guild.icon.url)
 
-            summary_embed.set_footer(text=f"Page 1/{total_pages} • Use Previous/Next buttons to browse")
-            pages.append(summary_embed)
-
-            for page_index in range(member_pages):
-                start = page_index * 10
-                chunk = member_lines[start:start + 10]
-                embed = discord.Embed(
-                    title="📋 Guild Members",
-                    description=f"Members {start + 1}-{start + len(chunk)} of {len(member_lines)}",
-                    color=discord.Color.blurple(),
-                    timestamp=datetime.utcnow()
-                )
-                embed.add_field(
-                    name="Member List",
-                    value="\n".join(chunk),
-                    inline=False
-                )
-                embed.set_footer(text=f"Page {len(pages) + 1}/{total_pages}")
-                pages.append(embed)
-
-            for page_index in range(change_pages):
-                start = page_index * 10
-                chunk = change_lines[start:start + 10]
-                embed = discord.Embed(
-                    title="📌 Recent Changes",
-                    description=f"Changes {start + 1}-{start + len(chunk)} of {len(change_lines)}",
-                    color=discord.Color.blurple(),
-                    timestamp=datetime.utcnow()
-                )
-                embed.add_field(
-                    name="Recent Activity",
-                    value="\n".join(chunk),
-                    inline=False
-                )
-                embed.set_footer(text=f"Page {len(pages) + 1}/{total_pages}")
-                pages.append(embed)
-
-            view = GuildUpdatesView(pages)
-            await interaction.followup.send(embed=pages[0], view=view)
+            await interaction.followup.send(embed=embed)
 
         except Exception as e:
             await interaction.followup.send(f"❌ Failed to fetch guild updates: {e}", ephemeral=True)
