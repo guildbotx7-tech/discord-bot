@@ -696,9 +696,11 @@ class GuildMonitoringCog(commands.Cog):
             if len(field_value) > 1024:
                 # If too long, truncate gracefully
                 lines = [f"{i+1}. {line}" for i, line in enumerate(member_lines)]
-                while lines and len(f"```\n{'\n'.join(lines)}\n```") > 1024:
+                newline = "\n"
+                while lines and len(f"```\n{newline.join(lines)}\n```") > 1024:
                     lines = lines[:-1]  # Remove last member until it fits
-                field_value = f"```\n{'\n'.join(lines)}\n... and {len(member_lines) - len(lines)} more members\n```"
+                joined_lines = newline.join(lines)
+                field_value = f"```\n{joined_lines}\n... and {len(member_lines) - len(lines)} more members\n```"
 
             embed.add_field(
                 name="Members",
