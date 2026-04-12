@@ -4,6 +4,7 @@ from discord import app_commands
 from discord.ext import commands
 from helpers import is_commander, set_log_channel_async, get_log_channel_async, safe_send, log_action
 from version import increment_version, get_version_string
+from mongodb import get_database
 
 
 class HelpView(discord.ui.View):
@@ -102,11 +103,16 @@ class UtilityCommands(commands.Cog):
                 await safe_send(interaction, "Log channel no longer exists. Use `/setlogchannel` to set a new one.", ephemeral=True)
                 await log_action(interaction, "Get Log Channel", f"{interaction.user.mention} checked log channel: Channel no longer exists.")
 
-    @app_commands.command(name="pingdb", description="Check database connection status")
+    @app_commands.command(name="pingdb", description="Check MongoDB connection status")
     async def pingdb(self, interaction: discord.Interaction):
-        """Utility: Ping DB status"""
-        await safe_send(interaction, "Database is connected (SQLite).", ephemeral=True)
-        await log_action(interaction, "Database Ping", f"{interaction.user.mention} pinged the database - Connected.")
+        """Utility: Ping MongoDB status"""
+        db = get_database()
+        if db:
+            await safe_send(interaction, "✅ MongoDB is connected", ephemeral=True)
+            await log_action(interaction, "Database Ping", f"{interaction.user.mention} pinged MongoDB - Connected.")
+        else:
+            await safe_send(interaction, "❌ MongoDB is not connected", ephemeral=True)
+            await log_action(interaction, "Database Ping", f"{interaction.user.mention} pinged MongoDB - Not connected.")
 
     @app_commands.command(name="version", description="Show the current bot version")
     async def version(self, interaction: discord.Interaction):

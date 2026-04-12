@@ -1,3 +1,4 @@
 discord.py
 pymongo[srv]
 python-dotenv
+# SQLite3 is included in Python standard library

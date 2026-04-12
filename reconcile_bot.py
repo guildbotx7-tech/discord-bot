@@ -43,12 +43,11 @@ class MyBot(commands.Bot):
 
     async def setup_hook(self):
         """Load all command cogs at startup"""
-        # Initialize databases
-        init_channel_monitoring_db()
-        print("✅ SQLite Database initialized")
-        
         # Initialize MongoDB connection
         connect_mongodb()
+        
+        # Initialize MongoDB collections for channel monitoring
+        init_channel_monitoring_db()
         
         # Load cogs from commands folder
         await self.load_cog('commands.member_commands')
