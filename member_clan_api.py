@@ -38,8 +38,8 @@ def fetch_member_clan(access_token, timeout=10):
     if not access_token:
         raise MemberClanAPIError("Access token is required")
 
-    # Rate limit external API calls
-    asyncio.run(external_api_limiter.wait_for_slot())
+    # Rate limit external API calls synchronously
+    external_api_limiter.wait_for_slot_sync()
 
     query = urlencode({"access_token": access_token})
     url = f"{BASE_URL}?{query}"

@@ -47,6 +47,23 @@ class RateLimiter:
         while not await self.acquire(tokens):
             await asyncio.sleep(0.1)
 
+    def acquire_sync(self, tokens: int = 1) -> bool:
+        """Acquire tokens from the bucket synchronously."""
+        now = time.time()
+        elapsed = now - self.last_update
+        self.tokens = min(self.capacity, self.tokens + elapsed * self.rate)
+        self.last_update = now
+
+        if self.tokens >= tokens:
+            self.tokens -= tokens
+            return True
+        return False
+
+    def wait_for_tokens_sync(self, tokens: int = 1):
+        """Wait until tokens are available synchronously."""
+        while not self.acquire_sync(tokens):
+            time.sleep(0.1)
+
 
 class DiscordRateLimiter:
     """Discord-specific rate limiter handling global and per-route limits."""
@@ -123,6 +140,14 @@ class ExternalAPIRateLimiter:
     async def wait_for_slot(self):
         """Wait until an API call slot is available."""
         await self.limiter.wait_for_tokens()
+
+    def acquire_sync(self) -> bool:
+        """Acquire permission to make an external API call synchronously."""
+        return self.limiter.acquire_sync()
+
+    def wait_for_slot_sync(self):
+        """Wait until an API call slot is available synchronously."""
+        self.limiter.wait_for_tokens_sync()
 
 
 # Global rate limiter instances
