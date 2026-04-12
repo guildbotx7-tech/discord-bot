@@ -1,13 +1,18 @@
 """MongoDB connection and utilities"""
 import os
 import ssl
-import certifi
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
+
+# certifi is optional but recommended for updated CA certificates
+try:
+    import certifi
+except ImportError:
+    certifi = None
 
 MONGODB_URI = os.getenv("MONGODB_URI")
 MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "discord_bot")
@@ -27,45 +32,41 @@ def connect_mongodb():
     try:
         # Comprehensive SSL configuration for MongoDB Atlas
         print("🔍 Attempting MongoDB connection with comprehensive SSL settings...")
-        
-        # Set SSL certificate environment variables
-        os.environ['SSL_CERT_FILE'] = certifi.where()
-        os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
-        
-        # Create SSL context with maximum compatibility
-        ssl_context = ssl.create_default_context(cafile=certifi.where())
+
+        if certifi:
+            # Set SSL certificate environment variables when certifi is available
+            os.environ['SSL_CERT_FILE'] = certifi.where()
+            os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
+            ssl_context = ssl.create_default_context(cafile=certifi.where())
+        else:
+            print("⚠️ certifi not installed: falling back to system CA certificates")
+            ssl_context = ssl.create_default_context()
+
         ssl_context.check_hostname = True
         ssl_context.verify_mode = ssl.CERT_REQUIRED
-        
+
         # Force TLS 1.2+ for MongoDB Atlas compatibility
         if hasattr(ssl, 'TLSVersion'):
             try:
                 ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
                 ssl_context.maximum_version = ssl.TLSVersion.TLSv1_3
             except AttributeError:
-                # Fallback for older Python versions
                 ssl_context.protocol = ssl.PROTOCOL_TLSv1_2
-        
-        # Disable SSL compression (can cause issues)
+
         ssl_context.options |= ssl.OP_NO_COMPRESSION
-        
-        # Set as default HTTPS context
         ssl._create_default_https_context = lambda: ssl_context
-        
-        # Connect with optimized settings for MongoDB Atlas
+
         _mongo_client = MongoClient(
-            MONGODB_URI, 
+            MONGODB_URI,
             server_api=ServerApi('1'),
-            connectTimeoutMS=15000,  # 15 second timeout
+            connectTimeoutMS=15000,
             serverSelectionTimeoutMS=15000,
             socketTimeoutMS=30000,
-            maxPoolSize=5,  # Smaller pool for Atlas
+            maxPoolSize=5,
             minPoolSize=1,
             maxIdleTimeMS=30000,
             retryWrites=True,
             retryReads=True,
-            # Explicitly enable SSL
-            ssl=True,
             tls=True,
             tlsAllowInvalidCertificates=False,
             tlsAllowInvalidHostnames=False
@@ -99,15 +100,8 @@ def connect_mongodb():
         print("   - Try: telnet ac-hgckqvc-shard-00-00.pbdewtt.mongodb.net 27017")
         print()
         print("5. Alternative: Use MongoDB Compass or Studio 3T to test connection")
-        return False
-    except Exception as e:
-        print(f"❌ MongoDB Connection Failed: {e}")
-        print("💡 Troubleshooting tips:")
-        print("   - Ensure your network allows outbound SSL connections")
-        print("   - Check if your Python version supports TLS 1.2+")
-        print("   - Verify MongoDB Atlas IP whitelist includes your IP")
-        print("   - Try updating your Python SSL certificates")
-        print("   - Check firewall settings for port 27017")
+        if not certifi:
+            print("\n⚠️ Optional package 'certifi' is missing. Install it with: pip install certifi")
         return False
 
 def get_database():
