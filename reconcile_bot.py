@@ -43,11 +43,22 @@ class MyBot(commands.Bot):
 
     async def setup_hook(self):
         """Load all command cogs at startup"""
-        # Initialize MongoDB connection
-        connect_mongodb()
+        # Initialize MongoDB connection (non-blocking)
+        try:
+            mongo_connected = connect_mongodb()
+            if mongo_connected:
+                print("✅ Bot started with MongoDB support")
+            else:
+                print("⚠️ Bot started without MongoDB - some features may not work")
+        except Exception as e:
+            print(f"⚠️ MongoDB connection failed during startup: {e}")
+            print("⚠️ Bot started without MongoDB - some features may not work")
         
-        # Initialize MongoDB collections for channel monitoring
-        init_channel_monitoring_db()
+        # Initialize MongoDB collections for channel monitoring (only if connected)
+        try:
+            init_channel_monitoring_db()
+        except Exception as e:
+            print(f"⚠️ MongoDB collection initialization failed: {e}")
         
         # Load cogs from commands folder
         await self.load_cog('commands.member_commands')

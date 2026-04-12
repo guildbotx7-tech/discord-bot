@@ -224,6 +224,7 @@ class GuildMonitoringCog(commands.Cog):
             print(f"\n🔥 GUILD MONITORING CYCLE (every {self.monitoring_interval} minutes)")
 
             # Check each text channel for registered guilds
+            channels_checked = 0
             for guild in self.bot.guilds:
                 for channel in guild.text_channels:
                     # Check if this channel has a registered guild
@@ -236,6 +237,11 @@ class GuildMonitoringCog(commands.Cog):
                                 await self.send_change_notifications(channel, changes)
                         else:
                             print(f"❌ Channel {channel.name}: {result['error']}")
+
+                        channels_checked += 1
+                        # Add delay between channel checks to avoid rate limiting
+                        if channels_checked < sum(1 for g in self.bot.guilds for c in g.text_channels if get_channel_guild_id(c.id)):
+                            await asyncio.sleep(3)  # 3 second delay between API calls
 
             print("✅ Monitoring cycle complete\n")
 

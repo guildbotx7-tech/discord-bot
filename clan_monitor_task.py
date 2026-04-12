@@ -27,7 +27,7 @@ async def monitor_all_clans(bot):
         print("=" * 60 + "\n")
         return
 
-    for guild_id in registered_guilds:
+    for i, guild_id in enumerate(registered_guilds):
         access_token = get_token_for_guild(guild_id)
         
         if not access_token:
@@ -51,6 +51,10 @@ async def monitor_all_clans(bot):
                 print(f"Guild {guild_id}: No changes")
         else:
             print(f"Guild {guild_id}: {result['error']}")
+
+        # Add delay between guild checks to avoid rate limiting
+        if i < len(registered_guilds) - 1:  # Don't delay after the last guild
+            await asyncio.sleep(2)  # 2 second delay between API calls
 
     print("=" * 60 + "\n")
 

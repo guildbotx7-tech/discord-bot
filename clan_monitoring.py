@@ -115,3 +115,68 @@ def get_recent_changes(clan_id, limit=50):
 def record_membership_change(clan_id, ff_uid, change_type, nickname=None):
     """Record a membership change (wrapper for log_membership_change)."""
     log_membership_change(clan_id, ff_uid, change_type, nickname)
+
+
+def check_roster_changes(api_response, clan_id):
+    """Check for roster changes and update database.
+
+    Args:
+        api_response (dict): API response from memberClan API.
+        clan_id (int): Free Fire clan ID.
+
+    Returns:
+        dict: {"joined": list, "left": list} with member info.
+    """
+    try:
+        from member_clan_api import get_roster_uids, detect_roster_changes, get_member_by_uid
+        
+        current_uids = get_roster_uids(api_response)
+        previous_uids = get_last_roster(clan_id)
+        
+        changes = detect_roster_changes(current_uids, previous_uids)
+        
+        # Log changes
+        for uid in changes["joined"]:
+            member_data = get_member_by_uid(api_response, uid)
+            nickname = member_data.get("nickname") if member_data else None
+            log_membership_change(clan_id, uid, "joined", nickname)
+            
+        for uid in changes["left"]:
+            log_membership_change(clan_id, uid, "left")
+        
+        # Save current roster
+        save_roster_snapshot(clan_id, current_uids)
+        
+        # Convert sets to lists for return
+        return {
+            "joined": list(changes["joined"]),
+            "left": list(changes["left"])
+        }
+    except Exception as e:
+        print(f"Error checking roster changes: {e}")
+        return {"joined": [], "left": []}
+
+
+def monitor_clan_roster(access_token, clan_id):
+    """Execute a single roster check cycle.
+
+    Args:
+        access_token (str): API access token.
+        clan_id (int): Free Fire clan ID.
+
+    Returns:
+        dict: Result containing joined/left members, or error info.
+    """
+    try:
+        print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Checking clan {clan_id}...")
+        from member_clan_api import fetch_member_clan
+        api_response = fetch_member_clan(access_token)
+        changes = check_roster_changes(api_response, clan_id)
+        return {"status": "success", "changes": changes}
+    except Exception as e:
+        print(f"  ❌ Error: {e}")
+        return {"status": "error", "error": str(e)}
+
+
+# Initialize DB on import
+init_monitoring_db()

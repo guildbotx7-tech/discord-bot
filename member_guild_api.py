@@ -7,10 +7,13 @@ Handles:
 """
 
 import json
+import asyncio
 from datetime import datetime
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+
+from rate_limiter import external_api_limiter
 
 BASE_URL = "http://controle.thug4ff.xyz/memberClan"
 
@@ -35,6 +38,9 @@ def fetch_member_guild(access_token, timeout=10):
     """
     if not access_token:
         raise MemberGuildAPIError("Access token is required")
+
+    # Rate limit external API calls
+    asyncio.run(external_api_limiter.wait_for_slot())
 
     query = urlencode({"access_token": access_token})
     url = f"{BASE_URL}?{query}"
