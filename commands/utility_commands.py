@@ -121,12 +121,12 @@ class UtilityCommands(commands.Cog):
         version_value = getattr(self.bot, "version", "unknown")
         await safe_send(interaction, f"🤖 Bot version: `{version_value}`", ephemeral=False)
 
-    @app_commands.command(name="increment_version", description="Increment bot version (Head Commander only)")
+    @app_commands.command(name="increment_version", description="Increment bot version (Owner only)")
     @app_commands.describe(change_type="Type of change: major, minor, or patch")
     async def increment_version_cmd(self, interaction: discord.Interaction, change_type: str):
-        # Check if user is head commander
-        if not hasattr(interaction.user, 'roles') or not any(role.name.lower() == "head commander" for role in interaction.user.roles):
-            await safe_send(interaction, "❌ Only Head Commanders can update the bot version.", ephemeral=True)
+        # Check if user is the bot owner
+        if interaction.user.id != self.bot.owner_id:
+            await safe_send(interaction, "❌ Only the bot owner can update the bot version.", ephemeral=True)
             return
 
         change_type = change_type.lower()
