@@ -49,7 +49,6 @@ class MyBot(commands.Bot):
             print(f"⚠️ SQLite database initialization failed: {e}")
         
         # Load cogs from commands folder
-        await self.load_cog('commands.member_commands')
         await self.load_cog('commands.commander_commands')
         await self.load_cog('commands.channel_commands')
         await self.load_cog('commands.moderation_commands')

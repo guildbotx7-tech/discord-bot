@@ -7,10 +7,9 @@ Your Discord bot commands are now organized into separate files for easy mainten
 ```
 discord-bot/
 ├── reconcile_bot.py          # Main bot entry point (clean & minimal)
-├── helpers.py                # Shared utilities & MongoDB functions
+├── helpers.py                # Shared utilities & helper functions
 ├── commands/                 # All commands organized by category
 │   ├── __init__.py
-│   ├── member_commands.py    # Guild & Bound member list commands
 │   ├── commander_commands.py # Commander role management
 │   ├── channel_commands.py   # Channel control commands
 │   ├── moderation_commands.py# User discipline commands
@@ -18,22 +17,10 @@ discord-bot/
 │   └── utility_commands.py   # Help and utility commands
 ├── .env                      # Environment variables (TOKEN, MONGO_URI)
 ├── requirments.txt           # Python dependencies
-├── MONGODB_SETUP.md          # MongoDB setup guide
 └── .gitignore               # Git ignore file
 ```
 
 ## 🎯 Finding Command Files
-
-### **Member List Commands** → [commands/member_commands.py](commands/member_commands.py)
-- `/members setguild <text>` - Store guild member list
-- `/members setbound <text>` - Store bound member list
-- `/members notbind` - Show unbound guild members
-- `/members missing_player` - Show missing players
-- `/members showdata` - Preview stored lists
-- `/members update <type> <id> <name>` - Update player name
-- `/members clear` - Clear all data
-- `/members count` - Show member counts
-- `/members export` - Export as CSV
 
 ### **Commander Management** → [commands/commander_commands.py](commands/commander_commands.py)
 - `/addcommander <user>` - Promote user to Commander
@@ -59,8 +46,8 @@ discord-bot/
 ## 🔧 Helper Functions → [helpers.py](helpers.py)
 
 Shared utility functions used by all commands:
-- `get_channel_data(channel_id)` - Fetch data from MongoDB
-- `update_channel_data(channel_id, ...)` - Save data to MongoDB
+- `get_channel_data(channel_id)` - Fetch data from SQLite
+- `update_channel_data(channel_id, ...)` - Save data to SQLite
 - `clear_channel_data(channel_id)` - Delete channel data
 - `is_commander(interaction)` - Check user permissions
 - `parse_member_lines(text, regex)` - Parse member list from text
@@ -92,7 +79,7 @@ await self.load_cog('commands.my_commands')
 ✅ **Clean separation of concerns** - Each file handles one category  
 ✅ **Easy to navigate** - Find what you need quickly  
 ✅ **Modular design** - Add/remove commands without affecting others  
-✅ **MongoDB persistence** - Data survives bot restarts  
+✅ **SQLite persistence** - Data survives bot restarts  
 ✅ **Shared utilities** - DRY principle with helpers.py  
 ✅ **Proper error handling** - Cogs load with error feedback  
 
@@ -112,7 +99,7 @@ python reconcile_bot.py
 
 ## 📚 To Learn More
 
-- See [MONGODB_SETUP.md](MONGODB_SETUP.md) for database setup
+- See [README.md](README.md) for setup instructions
 - Each command file has docstrings explaining what it does
 - Check `.env.example` for configuration
 

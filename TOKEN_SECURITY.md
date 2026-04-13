@@ -301,6 +301,6 @@ TOKEN=your_discord_bot_token_here
 GUILD_TOKEN_63582136=your_free_fire_api_token_for_guild_1
 GUILD_TOKEN_12345678=your_free_fire_api_token_for_guild_2
 
-# Optional: MongoDB and other settings
-MONGODB_URL=mongodb://...
+# SQLite Database - Local file storage
+# Databases: discord_bot.db, clan_monitoring.db
 """

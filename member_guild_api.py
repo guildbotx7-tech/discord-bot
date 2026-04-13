@@ -14,6 +14,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from rate_limiter import external_api_limiter
+from helpers import get_ist_timestamp
 
 BASE_URL = "http://controle.thug4ff.xyz/memberClan"
 
@@ -171,7 +172,7 @@ def create_discord_uid_mapping(discord_id, ff_uid):
     return {
         "discord_id": int(discord_id),
         "ff_uid": int(ff_uid),
-        "linked_at": datetime.utcnow().isoformat(),
+        "linked_at": get_ist_timestamp(),
     }
 
 
@@ -191,5 +192,5 @@ def record_membership_change(ff_uid, change_type, guild_id=None, timestamp=None)
         "ff_uid": int(ff_uid),
         "change_type": change_type,
         "guild_id": guild_id,
-        "timestamp": timestamp or datetime.utcnow().isoformat(),
+        "timestamp": timestamp or get_ist_timestamp(),
     }

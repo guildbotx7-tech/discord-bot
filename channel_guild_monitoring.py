@@ -2,8 +2,8 @@
 
 import sqlite3
 import json
-from datetime import datetime
 from pathlib import Path
+from helpers import get_ist_timestamp
 
 DB_PATH = Path(__file__).parent / "discord_bot.db"
 
@@ -148,7 +148,7 @@ def register_channel_guild(channel_id, guild_id, access_token, registered_by, gu
         cursor = conn.cursor()
         cursor.execute(
             "INSERT OR REPLACE INTO channel_guilds (channel_id, guild_id, access_token, registered_by, registered_at, guild_name) VALUES (?, ?, ?, ?, ?, ?)",
-            (channel_id, guild_id, access_token, registered_by, datetime.utcnow().isoformat(), guild_name)
+            (channel_id, guild_id, access_token, registered_by, get_ist_timestamp(), guild_name)
         )
         conn.commit()
         conn.close()
@@ -215,7 +215,7 @@ def save_channel_snapshot(channel_id, guild_id, uids):
         cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO channel_snapshots (channel_id, guild_id, member_uids, snapshot_at) VALUES (?, ?, ?, ?)",
-            (channel_id, guild_id, json.dumps(list(uids)), datetime.utcnow().isoformat())
+            (channel_id, guild_id, json.dumps(list(uids)), get_ist_timestamp())
         )
         conn.commit()
         conn.close()
@@ -230,7 +230,7 @@ def log_channel_membership_change(channel_id, guild_id, uid, change_type, nickna
         cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO channel_changes (channel_id, guild_id, uid, change_type, nickname, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-            (channel_id, guild_id, uid, change_type, nickname, datetime.utcnow().isoformat())
+            (channel_id, guild_id, uid, change_type, nickname, get_ist_timestamp())
         )
         conn.commit()
         conn.close()
@@ -245,7 +245,7 @@ def cache_member_data(uid, data):
         cursor = conn.cursor()
         cursor.execute(
             "INSERT OR REPLACE INTO member_cache (uid, data, cached_at) VALUES (?, ?, ?)",
-            (uid, json.dumps(data), datetime.utcnow().isoformat())
+            (uid, json.dumps(data), get_ist_timestamp())
         )
         conn.commit()
         conn.close()
@@ -401,7 +401,7 @@ def set_monitoring_interval(minutes):
         cursor = conn.cursor()
         cursor.execute(
             "INSERT OR REPLACE INTO bot_settings (key, value, updated_at) VALUES (?, ?, ?)",
-            ("monitoring_interval", str(minutes), datetime.utcnow().isoformat())
+            ("monitoring_interval", str(minutes), get_ist_timestamp())
         )
         conn.commit()
         conn.close()

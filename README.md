@@ -1,11 +1,11 @@
 # Discord Bot - Reconcile
 
-A Discord bot for managing guild members and bound player lists with MongoDB persistence.
+A Discord bot for managing guild members and bound player lists with SQLite persistence.
 
 ## Features
 
 - 12 slash commands organized by category
-- MongoDB database integration
+- SQLite database integration
 - Member binding and tracking
 - Moderation tools (warn, mute, unmute)
 - Message cleanup (prune)
@@ -42,7 +42,7 @@ A Discord bot for managing guild members and bound player lists with MongoDB per
    python reconcile_bot.py
    ```
 
-> Note: This bot stores local SQLite data files in the repo folder. For persistent guild history or state across deploys, use MongoDB or external storage.
+> Note: This bot stores local SQLite data files in the repo folder. For Railway deployments, use `/exportdb` to backup and `/importdb` to restore.
 
 ## Commands
 
@@ -77,4 +77,4 @@ A Discord bot for managing guild members and bound player lists with MongoDB per
 - discord.py
 - pymongo
 - python-dotenv
-- MongoDB (local or Atlas)
+- SQLite (included with Python)

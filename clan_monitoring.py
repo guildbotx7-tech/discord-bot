@@ -7,6 +7,7 @@ import json
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+from helpers import get_ist_now, get_ist_timestamp
 
 from member_clan_api import (
     detect_roster_changes,
@@ -86,7 +87,7 @@ def save_roster_snapshot(clan_id, uids):
         cursor = conn.cursor()
         cursor.execute(
             "REPLACE INTO roster_snapshots (clan_id, uids, last_checked) VALUES (?, ?, ?)",
-            (clan_id, json.dumps(list(uids)), datetime.utcnow().isoformat()),
+            (clan_id, json.dumps(list(uids)), get_ist_timestamp()),
         )
         conn.commit()
         conn.close()
@@ -110,7 +111,7 @@ def log_membership_change(clan_id, ff_uid, change_type, nickname=None):
             """INSERT INTO membership_changes 
                (clan_id, ff_uid, change_type, nickname, detected_at)
                VALUES (?, ?, ?, ?, ?)""",
-            (clan_id, ff_uid, change_type, nickname, datetime.utcnow().isoformat()),
+            (clan_id, ff_uid, change_type, nickname, get_ist_timestamp()),
         )
         conn.commit()
         conn.close()
@@ -181,7 +182,7 @@ def monitor_clan_roster(access_token, clan_id):
         dict: Result containing joined/left members, or error info.
     """
     try:
-        print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Checking clan {clan_id}...")
+        print(f"\n[{get_ist_now().strftime('%Y-%m-%d %H:%M:%S IST')}] Checking clan {clan_id}...")
         api_response = fetch_member_clan(access_token)
         changes = check_roster_changes(api_response, clan_id)
         return {"status": "success", "changes": changes}

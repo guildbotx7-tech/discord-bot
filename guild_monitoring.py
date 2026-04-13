@@ -7,6 +7,7 @@ import json
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+from helpers import get_ist_timestamp
 
 from member_guild_api import (
     detect_list_changes,
@@ -97,7 +98,7 @@ def save_list_snapshot(guild_id, uids):
         cursor = conn.cursor()
         cursor.execute(
             "REPLACE INTO list_snapshots (guild_id, uids, last_checked) VALUES (?, ?, ?)",
-            (guild_id, json.dumps(list(uids)), datetime.utcnow().isoformat()),
+            (guild_id, json.dumps(list(uids)), get_ist_timestamp()),
         )
         conn.commit()
         conn.close()
@@ -121,7 +122,7 @@ def log_membership_change(guild_id, ff_uid, change_type, nickname=None):
             """INSERT INTO membership_changes
                (guild_id, ff_uid, change_type, nickname, detected_at)
                VALUES (?, ?, ?, ?, ?)""",
-            (guild_id, ff_uid, change_type, nickname, datetime.utcnow().isoformat()),
+            (guild_id, ff_uid, change_type, nickname, get_ist_timestamp()),
         )
         conn.commit()
         conn.close()

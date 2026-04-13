@@ -3,8 +3,12 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import sqlite3
+import shutil
 from pathlib import Path
-from helpers import is_commander, set_log_channel_async, get_log_channel_async, safe_send, log_action
+import zipfile
+import io
+from datetime import datetime
+from helpers import is_commander, set_log_channel_async, get_log_channel_async, safe_send, log_action, get_ist_now
 from version import increment_version, get_version_string
 
 
@@ -217,6 +221,8 @@ class UtilityCommands(commands.Cog):
                 "  • `/setlogchannel <channel>` – Set log channel",
                 "  • `/getlogchannel` – View log channel",
                 "  • `/pingdb` – Check database connection",
+                "  • `/exportdb` – Export all databases (Owner only)",
+                "  • `/importdb <backup_file>` – Import databases from backup (Owner only)",
                 "  • `/version` – Show current bot version"
             ]),
             ("🔥 Guild Monitoring Commands", [
@@ -248,6 +254,173 @@ class UtilityCommands(commands.Cog):
                 await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             else:
                 raise
+
+    @app_commands.command(name="exportdb", description="Export SQLite databases (Owner only)")
+    async def exportdb(self, interaction: discord.Interaction):
+        """Owner-exclusive command to export all SQLite databases as a compressed ZIP"""
+        # Check if user is the bot owner
+        if interaction.user.id != self.bot.owner_id:
+            await safe_send(interaction, "❌ Only the bot owner can export databases.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            # Get database file paths
+            bot_dir = Path(__file__).parent.parent
+            discord_db = bot_dir / "discord_bot.db"
+            clan_db = bot_dir / "clan_monitoring.db"
+
+            # Create a ZIP file in memory
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                # Add discord_bot.db if it exists
+                if discord_db.exists():
+                    zip_file.write(discord_db, arcname="discord_bot.db")
+
+                # Add clan_monitoring.db if it exists
+                if clan_db.exists():
+                    zip_file.write(clan_db, arcname="clan_monitoring.db")
+
+            zip_buffer.seek(0)
+
+            # Create a filename with timestamp
+            timestamp = get_ist_now().strftime("%Y%m%d_%H%M%S")
+            filename = f"discord_bot_backup_{timestamp}.zip"
+
+            # Send the ZIP file as attachment
+            file = discord.File(zip_buffer, filename=filename)
+            await interaction.followup.send(
+                f"📦 Database backup exported successfully",
+                file=file,
+                ephemeral=True
+            )
+
+            await log_action(interaction, "Database Export", f"{interaction.user.mention} exported SQLite databases")
+
+        except Exception as e:
+            await interaction.followup.send(
+                f"❌ Failed to export databases: {str(e)}",
+                ephemeral=True
+            )
+            await log_action(interaction, "Database Export Failed", f"{interaction.user.mention} failed to export databases: {str(e)}")
+
+    @app_commands.command(name="importdb", description="Import SQLite databases from backup (Owner only)")
+    @app_commands.describe(backup_file="Upload the backup ZIP file exported from /exportdb")
+    async def importdb(self, interaction: discord.Interaction, backup_file: discord.Attachment):
+        """Owner-exclusive command to import SQLite databases from a backup ZIP"""
+        # Check if user is the bot owner
+        if interaction.user.id != self.bot.owner_id:
+            await safe_send(interaction, "❌ Only the bot owner can import databases.", ephemeral=True)
+            return
+
+        # Check if the attachment is a ZIP file
+        if not backup_file.filename.endswith('.zip'):
+            await safe_send(interaction, "❌ Please upload a ZIP file (typically `discord_bot_backup_*.zip`).", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            # Get database file paths
+            bot_dir = Path(__file__).parent.parent
+            discord_db = bot_dir / "discord_bot.db"
+            clan_db = bot_dir / "clan_monitoring.db"
+
+            # Download the ZIP file
+            zip_buffer = io.BytesIO()
+            await backup_file.save(zip_buffer)
+            zip_buffer.seek(0)
+
+            # Create backup of current databases (with timestamp)
+            timestamp = get_ist_now().strftime("%Y%m%d_%H%M%S")
+            backup_dir = bot_dir / "backups"
+            backup_dir.mkdir(exist_ok=True)
+
+            if discord_db.exists():
+                import shutil
+                backup_discord = backup_dir / f"discord_bot_before_import_{timestamp}.db"
+                shutil.copy2(discord_db, backup_discord)
+
+            if clan_db.exists():
+                import shutil
+                backup_clan = backup_dir / f"clan_monitoring_before_import_{timestamp}.db"
+                shutil.copy2(clan_db, backup_clan)
+
+            # Extract and validate ZIP contents
+            extracted_files = {}
+            with zipfile.ZipFile(zip_buffer, 'r') as zip_file:
+                # Check what files are in the ZIP
+                namelist = zip_file.namelist()
+                
+                if 'discord_bot.db' in namelist:
+                    extracted_files['discord_bot.db'] = zip_file.read('discord_bot.db')
+                
+                if 'clan_monitoring.db' in namelist:
+                    extracted_files['clan_monitoring.db'] = zip_file.read('clan_monitoring.db')
+
+            # Verify we got at least one database
+            if not extracted_files:
+                await interaction.followup.send(
+                    "❌ ZIP file does not contain any recognized database files (discord_bot.db or clan_monitoring.db).",
+                    ephemeral=True
+                )
+                return
+
+            # Close any open connections to the databases
+            try:
+                conn = sqlite3.connect(str(discord_db))
+                conn.close()
+            except:
+                pass
+
+            try:
+                conn = sqlite3.connect(str(clan_db))
+                conn.close()
+            except:
+                pass
+
+            # Replace databases with extracted files
+            for filename, content in extracted_files.items():
+                target_path = bot_dir / filename
+                with open(target_path, 'wb') as f:
+                    f.write(content)
+
+            # Verify databases can be opened
+            for filename in extracted_files.keys():
+                target_path = bot_dir / filename
+                try:
+                    conn = sqlite3.connect(str(target_path))
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT 1")
+                    conn.close()
+                except Exception as e:
+                    await interaction.followup.send(
+                        f"❌ Imported {filename} is corrupt or invalid: {str(e)}",
+                        ephemeral=True
+                    )
+                    return
+
+            # Success message
+            imported_list = ", ".join(extracted_files.keys())
+            await interaction.followup.send(
+                f"✅ Database import successful!\n\n**Imported files:**\n{imported_list}\n\n**Backup created:**\n(files stored in `backups/` directory)",
+                ephemeral=True
+            )
+
+            await log_action(interaction, "Database Import", f"{interaction.user.mention} imported SQLite databases ({imported_list})")
+
+        except zipfile.BadZipFile:
+            await interaction.followup.send(
+                "❌ The uploaded file is not a valid ZIP file.",
+                ephemeral=True
+            )
+        except Exception as e:
+            await interaction.followup.send(
+                f"❌ Failed to import databases: {str(e)}",
+                ephemeral=True
+            )
+            await log_action(interaction, "Database Import Failed", f"{interaction.user.mention} failed to import databases: {str(e)}")
 
 
 async def setup(bot):

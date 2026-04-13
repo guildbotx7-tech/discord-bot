@@ -4,12 +4,42 @@ import discord
 import sqlite3
 import json
 from dotenv import load_dotenv
+from datetime import datetime, timezone, timedelta
 
 # Load environment variables from .env file
 load_dotenv()
 
 # SQLite setup - local file database
 DB_FILE = "discord_bot.db"
+
+# IST Timezone (UTC+5:30)
+IST = timezone(timedelta(hours=5, minutes=30))
+
+def get_ist_now():
+    """Get current time in IST (Indian Standard Time - UTC+5:30)"""
+    return datetime.now(IST)
+
+def get_ist_timestamp():
+    """Get current IST timestamp in ISO format"""
+    return get_ist_now().isoformat()
+
+def format_ist_time(dt_str):
+    """Convert ISO datetime string to IST if it's in UTC, otherwise return as-is"""
+    try:
+        # Try parsing as ISO format
+        if isinstance(dt_str, str):
+            # If it's already IST, return it
+            if '+05:30' in dt_str or 'IST' in dt_str:
+                return dt_str
+            # Parse as UTC and convert to IST
+            dt = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
+            if dt.tzinfo is None:
+                # Assume UTC if no timezone
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(IST).isoformat()
+        return dt_str
+    except:
+        return dt_str
 
 # Initialize SQLite database
 def init_db():
