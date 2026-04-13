@@ -77,7 +77,7 @@ def fetch_member_guild(access_token, timeout=10):
     except URLError as exc:
         if "getaddrinfo failed" in str(exc.reason):
             raise MemberGuildAPIError(
-                f"Cannot reach the API server (controle.thug4ff.xyz). "
+                f"Cannot reach the API server."
                 f"Check your internet connection or firewall settings. "
                 f"Error: {exc.reason}"
             ) from exc

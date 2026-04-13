@@ -1,12 +1,16 @@
 """MongoDB connection and utilities"""
 import os
 import ssl
+from pathlib import Path
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
-# Load environment variables
-load_dotenv()
+# Load environment variables from .env in the repository root or current working directory
+dotenv_path = find_dotenv(filename='.env', raise_error_if_not_found=False)
+if not dotenv_path:
+    dotenv_path = Path(__file__).resolve().parent / '.env'
+load_dotenv(dotenv_path)
 
 # certifi is optional but recommended for updated CA certificates
 try:
