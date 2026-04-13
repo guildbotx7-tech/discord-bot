@@ -19,9 +19,6 @@ GUILD_ID = os.getenv("GUILD_ID")  # optional for instant guild-level slash comma
 # Import version management
 from version import get_current_version, get_version_string
 
-# Import MongoDB connection
-from mongodb import connect_mongodb, close_mongodb
-
 # Bot versioning follows semantic style: major.minor.patch
 # - major: breaking or very major updates
 # - minor: new features, command additions, or medium updates
@@ -43,22 +40,13 @@ class MyBot(commands.Bot):
 
     async def setup_hook(self):
         """Load all command cogs at startup"""
-        # Initialize MongoDB connection (non-blocking)
+        # Initialize SQLite database for channel monitoring
         try:
-            mongo_connected = connect_mongodb()
-            if mongo_connected:
-                print("✅ Bot started with MongoDB support")
-            else:
-                print("⚠️ Bot started without MongoDB - some features may not work")
-        except Exception as e:
-            print(f"⚠️ MongoDB connection failed during startup: {e}")
-            print("⚠️ Bot started without MongoDB - some features may not work")
-        
-        # Initialize MongoDB collections for channel monitoring (only if connected)
-        try:
+            from channel_guild_monitoring import init_channel_monitoring_db
             init_channel_monitoring_db()
+            print("✅ SQLite database initialized for channel monitoring")
         except Exception as e:
-            print(f"⚠️ MongoDB collection initialization failed: {e}")
+            print(f"⚠️ SQLite database initialization failed: {e}")
         
         # Load cogs from commands folder
         await self.load_cog('commands.member_commands')
@@ -100,9 +88,8 @@ async def on_ready():
 
 @bot.event
 async def on_error(event, *args, **kwargs):
-    """Handle bot errors and close MongoDB on critical failure"""
+    """Handle bot errors"""
     print(f"❌ Error in {event}: {args} {kwargs}")
-    close_mongodb()
 
 @bot.event
 async def on_app_command_error(interaction: discord.Interaction, error):

@@ -1,4 +1,4 @@
-﻿"""Free Fire guild reconciliation commands cog"""
+"""Free Fire guild reconciliation commands cog"""
 
 import os
 import sys
