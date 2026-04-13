@@ -24,10 +24,13 @@ MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "discord_bot")
 # Global MongoDB client and database instances
 _mongo_client = None
 _mongo_db = None
+_mongo_connection_attempted = False
+_mongo_collection_warning_printed = False
 
 def connect_mongodb():
     """Initialize MongoDB connection with proper SSL/TLS configuration"""
-    global _mongo_client, _mongo_db
+    global _mongo_client, _mongo_db, _mongo_connection_attempted
+    _mongo_connection_attempted = True
     
     if not MONGODB_URI:
         print("⚠️ MONGODB_URI not found in environment variables. Skipping MongoDB connection.")
@@ -110,16 +113,19 @@ def connect_mongodb():
 
 def get_database():
     """Get the MongoDB database instance"""
-    global _mongo_db
-    if _mongo_db is None:
+    global _mongo_db, _mongo_connection_attempted
+    if _mongo_db is None and not _mongo_connection_attempted:
         connect_mongodb()
     return _mongo_db
 
 def get_collection(collection_name):
     """Get a MongoDB collection"""
+    global _mongo_collection_warning_printed
     db = get_database()
     if db is None:
-        print(f"⚠️ Cannot get collection '{collection_name}' - MongoDB not connected")
+        if not _mongo_collection_warning_printed:
+            print("⚠️ MongoDB is not connected. Collection access will be skipped until connection is available.")
+            _mongo_collection_warning_printed = True
         return None
     return db[collection_name]
 
@@ -188,7 +194,6 @@ def create_index(collection_name, field, unique=False):
     try:
         collection = get_collection(collection_name)
         if collection is None:
-            print(f"⚠️ Cannot create index on '{collection_name}' - MongoDB not connected")
             return False
         collection.create_index(field, unique=unique)
         return True

@@ -18,16 +18,20 @@ def init_channel_monitoring_db():
         # Create indexes for fast lookups
         from mongodb import create_index
         
-        create_index(CHANNEL_GUILDS, "channel_id", unique=True)
-        create_index(CHANNEL_SNAPSHOTS, "channel_id")
-        create_index(CHANNEL_SNAPSHOTS, "guild_id")
-        create_index(CHANNEL_CHANGES, "channel_id")
-        create_index(CHANNEL_CHANGES, "guild_id")
-        create_index(MEMBER_CACHE, "uid", unique=True)
-        create_index(BOT_SETTINGS, "key", unique=True)
-        
-        print("✅ MongoDB collections initialized")
-        return True
+        indexes_ok = True
+        indexes_ok &= create_index(CHANNEL_GUILDS, "channel_id", unique=True)
+        indexes_ok &= create_index(CHANNEL_SNAPSHOTS, "channel_id")
+        indexes_ok &= create_index(CHANNEL_SNAPSHOTS, "guild_id")
+        indexes_ok &= create_index(CHANNEL_CHANGES, "channel_id")
+        indexes_ok &= create_index(CHANNEL_CHANGES, "guild_id")
+        indexes_ok &= create_index(MEMBER_CACHE, "uid", unique=True)
+        indexes_ok &= create_index(BOT_SETTINGS, "key", unique=True)
+
+        if indexes_ok:
+            print("✅ MongoDB collections initialized")
+            return True
+        print("⚠️ MongoDB collections could not be initialized because MongoDB is not connected.")
+        return False
     except Exception as e:
         print(f"⚠️ MongoDB initialization warning: {e}")
         return False
