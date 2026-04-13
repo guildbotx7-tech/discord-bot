@@ -269,8 +269,11 @@ class GuildMonitoringCog(commands.Cog):
             joined_list = []
             for uid in joined_items[:50]:  # Limit to 50 per message
                 member_data = self.get_member_info(uid)
-                name = member_data.get("nickname", f"UID: {uid}") if member_data else f"UID: {uid}"
-                joined_list.append(f"✅ {name} (UID: {uid})")
+                display_name = self.format_member_display_name(uid, member_data)
+                if display_name == f"UID: {uid}":
+                    joined_list.append(f"✅ {display_name}")
+                else:
+                    joined_list.append(f"✅ {display_name} (UID: {uid})")
 
             embed.add_field(
                 name=f"Joined ({len(joined_items)})",
@@ -283,8 +286,11 @@ class GuildMonitoringCog(commands.Cog):
             left_list = []
             for uid in left_items[:5]:  # Limit to 5 per message
                 member_data = self.get_member_info(uid)
-                name = member_data.get("nickname", f"UID: {uid}") if member_data else f"UID: {uid}"
-                left_list.append(f"❌ {name} (UID: {uid})")
+                display_name = self.format_member_display_name(uid, member_data)
+                if display_name == f"UID: {uid}":
+                    left_list.append(f"❌ {display_name}")
+                else:
+                    left_list.append(f"❌ {display_name} (UID: {uid})")
 
             embed.add_field(
                 name=f"Left ({len(left_items)})",
@@ -315,6 +321,16 @@ class GuildMonitoringCog(commands.Cog):
             return json.loads(result[0]) if result else None
         except:
             return None
+
+    def format_member_display_name(self, uid, member_data):
+        """Return a cleaned display name and avoid duplicate UID output."""
+        if member_data:
+            nickname = member_data.get("nickname")
+            if nickname:
+                normalized = nickname.strip()
+                if normalized and normalized not in (f"UID:{uid}", f"UID: {uid}"):
+                    return normalized
+        return f"UID: {uid}"
 
     @app_commands.command(name="register_guild", description="Register a Free Fire guild for this channel (Commanders only)")
     @app_commands.describe(
@@ -584,7 +600,7 @@ class GuildMonitoringCog(commands.Cog):
             return
 
         try:
-            api_response = fetch_member_guild(access_token, timeout=10)
+            api_response = fetch_member_guild(access_token, timeout=45, retries=1)
             members = api_response.get("members", [])
 
             if not members:
@@ -657,7 +673,7 @@ class GuildMonitoringCog(commands.Cog):
             return
 
         try:
-            api_response = fetch_member_guild(access_token, timeout=10)
+            api_response = fetch_member_guild(access_token, timeout=45, retries=1)
             members = api_response.get("members", [])
 
             if not members:
@@ -757,7 +773,7 @@ class GuildMonitoringCog(commands.Cog):
 
         try:
             # Fetch current members from API
-            api_response = fetch_member_guild(access_token, timeout=10)
+            api_response = fetch_member_guild(access_token, timeout=45, retries=1)
             members = api_response.get("members", [])
 
             if not members:

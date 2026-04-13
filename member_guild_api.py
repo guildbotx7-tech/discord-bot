@@ -22,12 +22,13 @@ class MemberGuildAPIError(Exception):
     """Raised when the memberGuild API request fails."""
 
 
-def fetch_member_guild(access_token, timeout=10):
+def fetch_member_guild(access_token, timeout=30, retries=1):
     """Fetch current guild member list from the memberGuild API.
 
     Args:
         access_token (str): API access token (supplied separately per guild).
-        timeout (int): HTTP request timeout in seconds.
+        timeout (int): HTTP request timeout in seconds (default 30).
+        retries (int): Number of retry attempts on timeout (default 1).
 
     Returns:
         dict: Parsed JSON response containing guild_id, members list, and metadata.
@@ -47,44 +48,56 @@ def fetch_member_guild(access_token, timeout=10):
     request = Request(url, method="GET")
     request.add_header("Accept", "application/json")
 
-    try:
-        with urlopen(request, timeout=timeout) as response:
-            raw = response.read()
-            try:
-                data = json.loads(raw.decode("utf-8"))
+    last_exception = None
+    for attempt in range(retries + 1):
+        try:
+            with urlopen(request, timeout=timeout) as response:
+                raw = response.read()
+                try:
+                    data = json.loads(raw.decode("utf-8"))
 
-                if "members" in data:
-                    members = data["members"]
-                    if isinstance(members, str):
-                        try:
-                            members = json.loads(members)
-                        except Exception:
+                    if "members" in data:
+                        members = data["members"]
+                        if isinstance(members, str):
+                            try:
+                                members = json.loads(members)
+                            except Exception:
+                                members = []
+                        elif isinstance(members, dict):
+                            members = [members]
+
+                        if not isinstance(members, list):
                             members = []
-                    elif isinstance(members, dict):
-                        members = [members]
 
-                    if not isinstance(members, list):
-                        members = []
+                        data["members"] = members
 
-                    data["members"] = members
+                    return data
 
-                return data
+                except ValueError as exc:
+                    raise MemberGuildAPIError(f"Invalid JSON response: {exc}") from exc
+        except HTTPError as exc:
+            raise MemberGuildAPIError(f"HTTP error {exc.code}: {exc.reason}") from exc
+        except URLError as exc:
+            if "getaddrinfo failed" in str(exc.reason):
+                raise MemberGuildAPIError(
+                    f"Cannot reach the API server."
+                    f"Check your internet connection or firewall settings. "
+                    f"Error: {exc.reason}"
+                ) from exc
+            elif "timed out" in str(exc.reason).lower() or isinstance(exc.reason, TimeoutError):
+                last_exception = exc
+                if attempt < retries:
+                    continue  # Retry on timeout
+                else:
+                    raise MemberGuildAPIError(f"Request timed out after {timeout}s (retried {retries} times)") from exc
+            else:
+                raise MemberGuildAPIError(f"API error: {exc.reason}") from exc
+        except Exception as exc:
+            raise MemberGuildAPIError(f"Unexpected error: {exc}") from exc
 
-            except ValueError as exc:
-                raise MemberGuildAPIError(f"Invalid JSON response: {exc}") from exc
-    except HTTPError as exc:
-        raise MemberGuildAPIError(f"HTTP error {exc.code}: {exc.reason}") from exc
-    except URLError as exc:
-        if "getaddrinfo failed" in str(exc.reason):
-            raise MemberGuildAPIError(
-                f"Cannot reach the API server."
-                f"Check your internet connection or firewall settings. "
-                f"Error: {exc.reason}"
-            ) from exc
-        else:
-            raise MemberGuildAPIError(f"API error: {exc.reason}") from exc
-    except Exception as exc:
-        raise MemberGuildAPIError(f"Unexpected error: {exc}") from exc
+    # If we get here, all retries failed with timeout
+    if last_exception:
+        raise MemberGuildAPIError(f"Request timed out after {timeout}s (retried {retries} times)") from last_exception
 
 
 def get_list_uids(response):

@@ -107,7 +107,7 @@ class UtilityCommands(commands.Cog):
     async def pingdb(self, interaction: discord.Interaction):
         """Utility: Ping MongoDB status"""
         db = get_database()
-        if db:
+        if db is not None:
             await safe_send(interaction, "✅ MongoDB is connected", ephemeral=True)
             await log_action(interaction, "Database Ping", f"{interaction.user.mention} pinged MongoDB - Connected.")
         else:

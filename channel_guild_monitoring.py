@@ -352,7 +352,7 @@ def monitor_channel_guild(channel_id):
             return {"status": "error", "error": "No guild registered for this channel"}
 
         # First API call
-        api_response_1 = fetch_member_guild(access_token, timeout=10)
+        api_response_1 = fetch_member_guild(access_token, timeout=45, retries=2)
         current_members_1 = api_response_1.get("members", [])
 
         if not current_members_1:
@@ -362,7 +362,7 @@ def monitor_channel_guild(channel_id):
         time.sleep(2)
 
         # Second API call for verification
-        api_response_2 = fetch_member_guild(access_token, timeout=10)
+        api_response_2 = fetch_member_guild(access_token, timeout=45, retries=2)
         current_members_2 = api_response_2.get("members", [])
 
         if not current_members_2:
