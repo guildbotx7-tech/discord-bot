@@ -43,6 +43,9 @@ from channel_guild_monitoring import (
     get_channel_last_snapshot_time,
     get_player_monitoring_enabled, set_player_monitoring_enabled,
     get_rival_detection_enabled, set_rival_detection_enabled,
+    get_auto_monitor_duration, set_auto_monitor_duration,
+    get_auto_monitor_speed, set_auto_monitor_speed,
+    get_auto_monitoring_enabled, set_auto_monitoring_enabled,
 )
 
 
@@ -567,8 +570,12 @@ class GuildMonitoringCog(commands.Cog):
         
         # Automatically monitor players who left the guild
         try:
-            if changes["left"]:
+            if changes["left"] and get_auto_monitoring_enabled(channel.id):
                 auto_added = 0
+                # Get the auto-monitoring duration for this channel (in days)
+                duration_days = get_auto_monitor_duration(channel.id)
+                duration_hours = duration_days * 24  # Convert days to hours
+                
                 for uid in changes["left"]:
                     # Check if already being monitored
                     if not is_player_monitored(uid, channel.id):
@@ -576,16 +583,16 @@ class GuildMonitoringCog(commands.Cog):
                         member_data = self.get_member_info(uid)
                         nickname = member_data.get("nickname") if member_data else None
                         
-                        # Add to monitored list (duration_hours=None for indefinite, added_by=0 for auto-monitoring)
-                        add_monitored_player(uid, nickname or "Unknown", None, 0, channel.id)
+                        # Add to monitored list with the configured duration
+                        add_monitored_player(uid, nickname or "Unknown", duration_hours, 0, channel.id)
                         auto_added += 1
                 
                 if auto_added > 0:
-                    print(f"👁️ Auto-monitored {auto_added} player(s) who left {channel.name}")
+                    print(f"👁️ Auto-monitored {auto_added} player(s) who left {channel.name} for {duration_days} days")
                     # Send a follow-up about auto-monitoring
                     monitor_embed = discord.Embed(
                         title="👁️ Auto-Monitoring Activated",
-                        description=f"{auto_added} player(s) who left the guild are now being monitored for guild movements.",
+                        description=f"{auto_added} player(s) who left the guild are now being monitored for **{duration_days} days** for guild movements.",
                         color=discord.Color.purple(),
                         timestamp=get_ist_now()
                     )
@@ -1249,6 +1256,162 @@ class GuildMonitoringCog(commands.Cog):
             f"Channel {interaction.channel.mention} player monitoring interval updated from {current_interval} to {minutes} minutes"
         )
 
+    @app_commands.command(name="set_auto_monitor_duration", description="Set auto-monitoring duration when players leave the guild")
+    @app_commands.describe(days="Auto-monitoring duration in days (1-365, default: 30)")
+    async def set_auto_monitor_duration(self, interaction: discord.Interaction, days: int = 30):
+        """Set how long to automatically monitor players who leave the guild."""
+        try:
+            await interaction.response.defer()
+        except (discord.errors.NotFound, discord.errors.HTTPException):
+            try:
+                await interaction.response.send_message("⏱️ Processing took too long. Please try again.", ephemeral=True)
+            except:
+                return
+
+        if not is_head_commander(interaction):
+            await interaction.followup.send("❌ Only Head Commanders can set auto-monitoring duration.", ephemeral=True)
+            return
+
+        guild_id = self.get_channel_guild_id(interaction.channel.id)
+        if not guild_id:
+            await interaction.followup.send("❌ No guild is registered for this channel. Register a guild first.", ephemeral=True)
+            return
+
+        if days < 1 or days > 365:
+            await interaction.followup.send("❌ Auto-monitoring duration must be between 1 and 365 days.", ephemeral=True)
+            return
+
+        current_duration = get_auto_monitor_duration(interaction.channel.id)
+        if not set_auto_monitor_duration(interaction.channel.id, days):
+            await interaction.followup.send("❌ Failed to update auto-monitoring duration.", ephemeral=True)
+            return
+
+        # Convert to readable format
+        if days == 1:
+            duration_text = "1 day"
+        elif days == 7:
+            duration_text = "1 week"
+        elif days == 30:
+            duration_text = "1 month"
+        else:
+            duration_text = f"{days} days"
+
+        embed = discord.Embed(
+            title="⏱️ Auto-Monitoring Duration Updated",
+            description=f"Auto-monitoring duration for players who leave the guild changed from {current_duration} to {days} days.",
+            color=discord.Color.blue()
+        )
+        embed.add_field(name="Previous Duration", value=f"{current_duration} days", inline=True)
+        embed.add_field(name="New Duration", value=duration_text, inline=True)
+        embed.add_field(name="Channel", value=interaction.channel.mention, inline=True)
+        embed.add_field(name="Changed by", value=interaction.user.mention, inline=True)
+        embed.set_footer(text="Players leaving the guild will be monitored for this duration")
+
+        await interaction.followup.send(embed=embed)
+        await log_action(
+            interaction,
+            "Auto-Monitoring Duration Updated",
+            f"Channel {interaction.channel.mention} auto-monitoring duration updated from {current_duration} to {days} days"
+        )
+
+    @app_commands.command(name="set_auto_monitor_speed", description="Set how fast to check monitored players who left the guild")
+    @app_commands.describe(minutes="Check interval in minutes (1-600, default: 2)")
+    async def set_auto_monitor_speed(self, interaction: discord.Interaction, minutes: int = 2):
+        """Set the monitoring check speed for automatically monitored players."""
+        try:
+            await interaction.response.defer()
+        except (discord.errors.NotFound, discord.errors.HTTPException):
+            try:
+                await interaction.response.send_message("⏱️ Processing took too long. Please try again.", ephemeral=True)
+            except:
+                return
+
+        if not is_head_commander(interaction):
+            await interaction.followup.send("❌ Only Head Commanders can set auto-monitoring speed.", ephemeral=True)
+            return
+
+        guild_id = self.get_channel_guild_id(interaction.channel.id)
+        if not guild_id:
+            await interaction.followup.send("❌ No guild is registered for this channel. Register a guild first.", ephemeral=True)
+            return
+
+        if minutes < 1 or minutes > 600:
+            await interaction.followup.send("❌ Auto-monitoring speed must be between 1 and 600 minutes.", ephemeral=True)
+            return
+
+        current_speed = get_auto_monitor_speed(interaction.channel.id)
+        if not set_auto_monitor_speed(interaction.channel.id, minutes):
+            await interaction.followup.send("❌ Failed to update auto-monitoring speed.", ephemeral=True)
+            return
+
+        embed = discord.Embed(
+            title="⚙️ Auto-Monitoring Speed Updated",
+            description=f"Auto-monitoring check interval changed from {current_speed} to {minutes} minutes.",
+            color=discord.Color.blue()
+        )
+        embed.add_field(name="Previous Speed", value=f"Every {current_speed} minutes", inline=True)
+        embed.add_field(name="New Speed", value=f"Every {minutes} minutes", inline=True)
+        embed.add_field(name="Channel", value=interaction.channel.mention, inline=True)
+        embed.add_field(name="Changed by", value=interaction.user.mention, inline=True)
+        embed.set_footer(text="This applies to automatically monitored players who left the guild")
+
+        await interaction.followup.send(embed=embed)
+        await log_action(
+            interaction,
+            "Auto-Monitoring Speed Updated",
+            f"Channel {interaction.channel.mention} auto-monitoring speed updated from {current_speed} to {minutes} minutes"
+        )
+
+    # DEPRECATED: Auto-monitoring toggle is now integrated into /viewservices command
+    # Use /viewservices to toggle auto-monitoring service instead
+    #
+    # @app_commands.command(name="toggle_auto_monitoring", description="Toggle auto-monitoring service on/off")
+    # async def toggle_auto_monitoring(self, interaction: discord.Interaction):
+    #     """Toggle auto-monitoring service for this channel."""
+    #     try:
+    #         await interaction.response.defer()
+    #     except (discord.errors.NotFound, discord.errors.HTTPException):
+    #         try:
+    #             await interaction.response.send_message("⏱️ Processing took too long. Please try again.", ephemeral=True)
+    #         except:
+    #             return
+    #
+    #     if not is_head_commander(interaction):
+    #         await interaction.followup.send("❌ Only Head Commanders can toggle auto-monitoring.", ephemeral=True)
+    #         return
+    #
+    #     guild_id = self.get_channel_guild_id(interaction.channel.id)
+    #     if not guild_id:
+    #         await interaction.followup.send("❌ No guild is registered for this channel. Register a guild first.", ephemeral=True)
+    #         return
+    #
+    #     current_status = get_auto_monitoring_enabled(interaction.channel.id)
+    #     new_status = not current_status
+    #
+    #     if not set_auto_monitoring_enabled(interaction.channel.id, new_status):
+    #         await interaction.followup.send("❌ Failed to toggle auto-monitoring service.", ephemeral=True)
+    #         return
+    #
+    #     status_text = "✅ ENABLED" if new_status else "❌ DISABLED"
+    #     
+    #     embed = discord.Embed(
+    #         title="🎛️ Auto-Monitoring Service Toggled",
+    #         description=f"Auto-monitoring service is now {status_text}",
+    #         color=discord.Color.green() if new_status else discord.Color.red()
+    #     )
+    #     embed.add_field(name="Service", value="Auto-Monitoring", inline=True)
+    #     embed.add_field(name="Status", value=status_text, inline=True)
+    #     embed.add_field(name="Channel", value=interaction.channel.mention, inline=True)
+    #     embed.add_field(name="Toggled by", value=interaction.user.mention, inline=True)
+    #     embed.set_footer(text="This service auto-monitors players who leave the guild" if new_status else "Players who leave the guild will not be auto-monitored")
+    #
+    #     await interaction.followup.send(embed=embed)
+    #     await log_action(
+    #         interaction,
+    #         "Auto-Monitoring Service Toggled",
+    #         f"Auto-monitoring service {status_text} for {interaction.channel.mention}"
+    #     )
+
     @app_commands.command(name="monitor_player", description="Monitor a player by UID for a limited time")
     @app_commands.describe(
         uid="Free Fire UID of the player to monitor",
@@ -1641,12 +1804,19 @@ class GuildMonitoringCog(commands.Cog):
         # Get service enable/disable status
         player_monitoring_enabled = get_player_monitoring_enabled(channel_id)
         rival_detection_enabled = get_rival_detection_enabled(channel_id)
+        auto_monitoring_enabled = get_auto_monitoring_enabled(channel_id)
 
         # Monitoring services status
         services_status = []
         services_status.append(f"🔄 **Guild Monitoring**: Active ({global_interval}min intervals)")
         services_status.append(f"👁️ **Player Monitoring**: Active ({player_interval}min intervals)")
         services_status.append(f"🚨 **Partnered Guild Detection**: Active ({flagged_count} partnered guilds)" if flagged_count > 0 else f"🚨 **Partnered Guild Detection**: Active (no partnered guilds)")
+        auto_monitor_duration = get_auto_monitor_duration(channel_id)
+        auto_monitor_speed = get_auto_monitor_speed(channel_id)
+        if auto_monitoring_enabled:
+            services_status.append(f"🤖 **Auto-Monitoring**: Enabled ({auto_monitor_speed}min speed, {auto_monitor_duration}d duration)")
+        else:
+            services_status.append(f"🤖 **Auto-Monitoring**: Disabled")
 
         embed.add_field(
             name="⚙️ Monitoring Services",

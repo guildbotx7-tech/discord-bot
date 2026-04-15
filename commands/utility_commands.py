@@ -10,6 +10,7 @@ import io
 import json
 from datetime import datetime
 from helpers import is_commander, set_log_channel_async, get_log_channel_async, safe_send, log_action, get_ist_now, get_banned_players, get_channel_services, set_channel_service, SERVICES, get_all_channel_services
+from channel_guild_monitoring import get_auto_monitoring_enabled, set_auto_monitoring_enabled
 from version import increment_version, get_version_string
 
 
@@ -119,11 +120,81 @@ class ServiceView(discord.ui.View):
         super().__init__(timeout=300)
         self.channel_id = channel_id
         self.services_status = services_status
+        self.auto_monitoring_enabled = get_auto_monitoring_enabled(int(channel_id))
 
-    @discord.ui.button(label="Toggle Services", style=discord.ButtonStyle.primary)
-    async def toggle_services(self, interaction: discord.Interaction, button: discord.ui.Button):
-        modal = ServiceToggleModal(self.channel_id, self.services_status)
-        await interaction.response.send_modal(modal)
+        # Add individual toggle buttons for each service
+        for service in SERVICES:
+            enabled = self.services_status.get(service, True)
+            status_emoji = "✅" if enabled else "❌"
+            button = discord.ui.Button(
+                label=f"{status_emoji} {service.replace('_', ' ').title()}",
+                style=discord.ButtonStyle.success if enabled else discord.ButtonStyle.danger,
+                custom_id=f"service_toggle_{service}"
+            )
+            button.callback = self.create_toggle_callback(service)
+            self.add_item(button)
+
+        # Add auto-monitoring toggle button
+        auto_monitor_emoji = "🤖✅" if self.auto_monitoring_enabled else "🤖❌"
+        auto_monitor_button = discord.ui.Button(
+            label=f"{auto_monitor_emoji} Auto-Monitoring",
+            style=discord.ButtonStyle.success if self.auto_monitoring_enabled else discord.ButtonStyle.danger,
+            custom_id="service_toggle_auto_monitoring"
+        )
+        auto_monitor_button.callback = self.create_toggle_callback("auto_monitoring")
+        self.add_item(auto_monitor_button)
+
+    def create_toggle_callback(self, service):
+        async def callback(interaction: discord.Interaction):
+            # Check if user is owner
+            if interaction.user.id != interaction.client.owner_id:
+                await interaction.response.defer()
+                return
+
+            # Toggle the service
+            if service == "auto_monitoring":
+                current_status = self.auto_monitoring_enabled
+                new_status = not current_status
+                self.auto_monitoring_enabled = new_status
+                set_auto_monitoring_enabled(int(self.channel_id), new_status)
+            else:
+                current_status = self.services_status.get(service, True)
+                new_status = not current_status
+                self.services_status[service] = new_status
+                set_channel_service(self.channel_id, service, new_status)
+
+            # Update button appearance
+            if service == "auto_monitoring":
+                status_emoji = "🤖✅" if new_status else "🤖❌"
+                new_label = f"{status_emoji} Auto-Monitoring"
+            else:
+                status_emoji = "✅" if new_status else "❌"
+                new_label = f"{status_emoji} {service.replace('_', ' ').title()}"
+            
+            new_style = discord.ButtonStyle.success if new_status else discord.ButtonStyle.danger
+
+            # Update the button
+            for item in self.children:
+                if isinstance(item, discord.ui.Button):
+                    if service == "auto_monitoring" and item.custom_id == "service_toggle_auto_monitoring":
+                        item.label = new_label
+                        item.style = new_style
+                    elif service != "auto_monitoring" and item.custom_id == f"service_toggle_{service}":
+                        item.label = new_label
+                        item.style = new_style
+
+            # Update the message embed
+            embed = discord.Embed(title=f"Services for Channel {self.channel_id}", color=discord.Color.blue())
+            for svc in SERVICES:
+                status = "✅ Enabled" if self.services_status.get(svc, True) else "❌ Disabled"
+                embed.add_field(name=svc.replace("_", " ").title(), value=status, inline=False)
+            
+            auto_monitor_status = "🤖✅ Enabled" if self.auto_monitoring_enabled else "🤖❌ Disabled"
+            embed.add_field(name="Auto-Monitoring", value=auto_monitor_status, inline=False)
+
+            await interaction.response.edit_message(embed=embed, view=self)
+
+        return callback
 
 
 class UtilityCommands(commands.Cog):
@@ -258,7 +329,7 @@ class UtilityCommands(commands.Cog):
                 "  • `/increment_version <change_type>` – Increment bot version",
                 "  • `/exportdb` – Export all databases",
                 "  • `/importdb <backup_file>` – Import databases from backup",
-                "  • `/viewservices <channel_id>` – View and toggle services enabled for a channel",
+                "  • `/viewservices <channel_id>` – View and toggle services + auto-monitoring for a channel",
                 "  • `/allservices` – Show services for all channels with custom settings"
             ]),
             ("🔥 Guild Monitoring Commands", [
@@ -277,6 +348,9 @@ class UtilityCommands(commands.Cog):
                 "  • `/set_monitoring_speed` – Set global guild monitoring speed",
                 "  • `/set_ban_monitoring_speed` – Set ban monitoring speed for banned player alerts",
                 "  • `/set_player_monitoring_speed` – Set channel player monitoring speed",
+                "  • `/set_auto_monitor_duration` – Set auto-monitoring duration for players who leave (1-365 days)",
+                "  • `/set_auto_monitor_speed` – Set how fast to check auto-monitored players (1-600 minutes)",
+                "  • `/viewservices` – View and toggle services (including auto-monitoring) via buttons",
                 "  • `/debug_player_monitor` – Debug player monitoring status"
             ])
         ]
@@ -371,6 +445,12 @@ class UtilityCommands(commands.Cog):
         for service in SERVICES:
             status = "✅ Enabled" if services_status.get(service, True) else "❌ Disabled"
             embed.add_field(name=service.replace("_", " ").title(), value=status, inline=False)
+        
+        # Add auto-monitoring status
+        auto_monitoring_enabled = get_auto_monitoring_enabled(channel_id_int)
+        auto_monitor_status = "🤖✅ Enabled" if auto_monitoring_enabled else "🤖❌ Disabled"
+        embed.add_field(name="Auto-Monitoring", value=auto_monitor_status, inline=False)
+        
         view = ServiceView(str(channel_id_int), services_status)
         await interaction.followup.send(embed=embed, view=view)
 

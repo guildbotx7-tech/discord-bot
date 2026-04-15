@@ -99,6 +99,42 @@ def init_channel_monitoring_db():
     except Exception as e:
         print(f"⚠️ Migration warning: {e}")
 
+    # Migration: Add auto_monitor_duration_days column if it doesn't exist
+    try:
+        cursor.execute("PRAGMA table_info(channel_guilds)")
+        columns = [column[1] for column in cursor.fetchall()]
+        if "auto_monitor_duration_days" not in columns:
+            print("🔄 Migrating database: Adding auto_monitor_duration_days column to channel_guilds...")
+            cursor.execute("ALTER TABLE channel_guilds ADD COLUMN auto_monitor_duration_days INTEGER DEFAULT 30")
+            conn.commit()
+            print("✅ Migration complete: auto_monitor_duration_days column added")
+    except Exception as e:
+        print(f"⚠️ Migration warning: {e}")
+
+    # Migration: Add auto_monitor_speed_minutes column if it doesn't exist
+    try:
+        cursor.execute("PRAGMA table_info(channel_guilds)")
+        columns = [column[1] for column in cursor.fetchall()]
+        if "auto_monitor_speed_minutes" not in columns:
+            print("🔄 Migrating database: Adding auto_monitor_speed_minutes column to channel_guilds...")
+            cursor.execute("ALTER TABLE channel_guilds ADD COLUMN auto_monitor_speed_minutes INTEGER DEFAULT 2")
+            conn.commit()
+            print("✅ Migration complete: auto_monitor_speed_minutes column added")
+    except Exception as e:
+        print(f"⚠️ Migration warning: {e}")
+
+    # Migration: Add auto_monitoring_enabled column if it doesn't exist
+    try:
+        cursor.execute("PRAGMA table_info(channel_guilds)")
+        columns = [column[1] for column in cursor.fetchall()]
+        if "auto_monitoring_enabled" not in columns:
+            print("🔄 Migrating database: Adding auto_monitoring_enabled column to channel_guilds...")
+            cursor.execute("ALTER TABLE channel_guilds ADD COLUMN auto_monitoring_enabled INTEGER DEFAULT 1")
+            conn.commit()
+            print("✅ Migration complete: auto_monitoring_enabled column added")
+    except Exception as e:
+        print(f"⚠️ Migration warning: {e}")
+
     # Guild snapshots (per channel)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS channel_snapshots (
@@ -699,6 +735,112 @@ def set_rival_detection_enabled(channel_id, enabled):
         print(f"Error setting rival detection status: {e}")
         return False
 
+def get_auto_monitor_duration(channel_id):
+    """Get the auto-monitoring duration in days for a channel (default: 30 days)"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT auto_monitor_duration_days FROM channel_guilds WHERE channel_id = ?",
+            (channel_id,)
+        )
+        result = cursor.fetchone()
+        conn.close()
+        return result[0] if result else 30  # Default 30 days (1 month)
+    except Exception as e:
+        print(f"Error getting auto-monitor duration: {e}")
+        return 30
+
+
+def set_auto_monitor_duration(channel_id, days):
+    """Set the auto-monitoring duration in days for a channel"""
+    try:
+        # Validate input: between 1 and 365 days
+        days = max(1, min(int(days), 365))
+        
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE channel_guilds SET auto_monitor_duration_days = ? WHERE channel_id = ?",
+            (days, channel_id)
+        )
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error setting auto-monitor duration: {e}")
+        return False
+
+
+def get_auto_monitor_speed(channel_id):
+    """Get the auto-monitoring check speed in minutes for a channel (default: 2 minutes)"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT auto_monitor_speed_minutes FROM channel_guilds WHERE channel_id = ?",
+            (channel_id,)
+        )
+        result = cursor.fetchone()
+        conn.close()
+        return result[0] if result else 2  # Default 2 minutes
+    except Exception as e:
+        print(f"Error getting auto-monitor speed: {e}")
+        return 2
+
+
+def set_auto_monitor_speed(channel_id, minutes):
+    """Set the auto-monitoring check speed in minutes for a channel"""
+    try:
+        # Validate input: between 1 and 600 minutes
+        minutes = max(1, min(int(minutes), 600))
+        
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE channel_guilds SET auto_monitor_speed_minutes = ? WHERE channel_id = ?",
+            (minutes, channel_id)
+        )
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error setting auto-monitor speed: {e}")
+        return False
+
+
+def get_auto_monitoring_enabled(channel_id):
+    """Check if auto-monitoring service is enabled for a channel"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT auto_monitoring_enabled FROM channel_guilds WHERE channel_id = ?",
+            (channel_id,)
+        )
+        result = cursor.fetchone()
+        conn.close()
+        return bool(result[0]) if result else True  # Default enabled
+    except Exception as e:
+        print(f"Error getting auto-monitoring status: {e}")
+        return True
+
+
+def set_auto_monitoring_enabled(channel_id, enabled):
+    """Enable or disable auto-monitoring service for a channel"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE channel_guilds SET auto_monitoring_enabled = ? WHERE channel_id = ?",
+            (1 if enabled else 0, channel_id)
+        )
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error setting auto-monitoring: {e}")
+        return False
 
 # Initialize database on import
 init_channel_monitoring_db()
