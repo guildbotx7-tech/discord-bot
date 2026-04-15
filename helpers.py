@@ -44,117 +44,146 @@ def format_ist_time(dt_str):
 # Initialize SQLite database
 def init_db():
     """Initialize SQLite database and create tables"""
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
+    try:
+        print(f"🔄 Initializing database at: {DB_FILE}")
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        print("✅ Database connection established")
 
-    # Create channel_data table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS channel_data (
-            channel_id TEXT PRIMARY KEY,
-            guild_data TEXT,
-            bound_data TEXT
-        )
-    ''')
+        # Create channel_data table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS channel_data (
+                channel_id TEXT PRIMARY KEY,
+                guild_data TEXT,
+                bound_data TEXT
+            )
+        ''')
 
-    # Create log_settings table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS log_settings (
-            guild_id TEXT PRIMARY KEY,
-            log_channel_id TEXT
-        )
-    ''')
+        # Create log_settings table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS log_settings (
+                guild_id TEXT PRIMARY KEY,
+                log_channel_id TEXT
+            )
+        ''')
 
-    # Created warning records table for UID-based moderation
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS warnings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            guild_id TEXT,
-            channel_id TEXT,
-            uid TEXT,
-            reason TEXT,
-            warned_by TEXT,
-            timestamp TEXT
-        )
-    ''')
+        # Created warning records table for UID-based moderation
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS warnings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                channel_id TEXT,
+                uid TEXT,
+                reason TEXT,
+                warned_by TEXT,
+                timestamp TEXT
+            )
+        ''')
 
-    # Create ban records table for tracking banned players and alerts
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS banned_players (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            channel_id TEXT,
-            uid TEXT,
-            nickname TEXT,
-            reason TEXT,
-            banned_by TEXT,
-            banned_at TEXT,
-            active INTEGER DEFAULT 1,
-            alert_sent INTEGER DEFAULT 0,
-            alert_clan_id TEXT,
-            alert_clan_name TEXT,
-            alert_at TEXT,
-            UNIQUE(channel_id, uid)
-        )
-    ''')
+        # Create ban records table for tracking banned players and alerts
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS banned_players (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_id TEXT,
+                uid TEXT,
+                nickname TEXT,
+                reason TEXT,
+                banned_by TEXT,
+                banned_at TEXT,
+                active INTEGER DEFAULT 1,
+                alert_sent INTEGER DEFAULT 0,
+                alert_clan_id TEXT,
+                alert_clan_name TEXT,
+                alert_at TEXT,
+                UNIQUE(channel_id, uid)
+            )
+        ''')
 
-    # Create glory records table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS glory (
-            channel_id TEXT,
-            uid TEXT,
-            glory INTEGER,
-            updated_by TEXT,
-            timestamp TEXT,
-            PRIMARY KEY (channel_id, uid)
-        )
-    ''')
+        # Create glory records table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS glory (
+                channel_id TEXT,
+                uid TEXT,
+                glory INTEGER,
+                updated_by TEXT,
+                timestamp TEXT,
+                PRIMARY KEY (channel_id, uid)
+            )
+        ''')
 
-    # Create glory settings table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS glory_settings (
-            channel_id TEXT PRIMARY KEY,
-            threshold INTEGER DEFAULT 7000,
-            updated_by TEXT,
-            timestamp TEXT
-        )
-    ''')
+        # Create glory settings table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS glory_settings (
+                channel_id TEXT PRIMARY KEY,
+                threshold INTEGER DEFAULT 7000,
+                updated_by TEXT,
+                timestamp TEXT
+            )
+        ''')
 
-    # Create glory exceptions table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS glory_exceptions (
-            channel_id TEXT,
-            uid TEXT,
-            added_by TEXT,
-            timestamp TEXT,
-            PRIMARY KEY (channel_id, uid)
-        )
-    ''')
+        # Create glory exceptions table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS glory_exceptions (
+                channel_id TEXT,
+                uid TEXT,
+                added_by TEXT,
+                timestamp TEXT,
+                PRIMARY KEY (channel_id, uid)
+            )
+        ''')
 
-    # Create bot_settings table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS bot_settings (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )
-    ''')
+        # Create bot_settings table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS bot_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        ''')
 
-    # Migration support for older schema without channel_id (warnings)
-    cursor.execute("PRAGMA table_info(warnings)")
-    columns = [row[1] for row in cursor.fetchall()]
-    if "channel_id" not in columns:
-        try:
-            cursor.execute("ALTER TABLE warnings ADD COLUMN channel_id TEXT")
-            cursor.execute("UPDATE warnings SET channel_id = guild_id WHERE channel_id IS NULL OR channel_id = ''")
-            print("Migrated warnings table to include channel_id")
-        except Exception as e:
-            print(f"Migration note: could not alter warnings table: {e}")
+        # Migration support for older schema without channel_id (warnings)
+        cursor.execute("PRAGMA table_info(warnings)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "channel_id" not in columns:
+            try:
+                cursor.execute("ALTER TABLE warnings ADD COLUMN channel_id TEXT")
+                cursor.execute("UPDATE warnings SET channel_id = guild_id WHERE channel_id IS NULL OR channel_id = ''")
+                print("✅ Migrated warnings table to include channel_id")
+            except Exception as e:
+                print(f"⚠️ Migration note: could not alter warnings table: {e}")
 
-    conn.commit()
-    conn.close()
+        conn.commit()
+        conn.close()
+        print("✅ Database initialization completed successfully")
+        
+    except Exception as e:
+        print(f"❌ Database initialization error: {e}")
+        import traceback
+        traceback.print_exc()
+        if 'conn' in locals():
+            try:
+                conn.close()
+            except:
+                pass
+        raise
 
 # Initialize database on import
-init_db()
-print("Connected to local SQLite database")
+try:
+    init_db()
+    print("✅ Connected to local SQLite database")
+except Exception as e:
+    print(f"❌ Failed to initialize database: {e}")
+    # Try to create database file if it doesn't exist
+    import os
+    db_dir = os.path.dirname(DB_FILE)
+    if db_dir and not os.path.exists(db_dir):
+        os.makedirs(db_dir, exist_ok=True)
+    # Try again
+    try:
+        init_db()
+        print("✅ Database initialized on second attempt")
+    except Exception as e2:
+        print(f"❌ Database initialization failed permanently: {e2}")
 
 # SQLite helper functions
 def get_channel_data(channel_id):

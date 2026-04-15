@@ -41,21 +41,62 @@ class MyBot(commands.Bot):
 
     async def setup_hook(self):
         """Load all command cogs at startup"""
+        # Initialize main bot database FIRST (warnings, banned players, etc.)
+        try:
+            from helpers import init_db
+            print("🔄 Starting main bot database initialization...")
+            init_db()
+            print("✅ Main bot database initialized successfully")
+            
+            # Verify tables were created
+            import sqlite3
+            conn = sqlite3.connect("discord_bot.db")
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = [row[0] for row in cursor.fetchall()]
+            conn.close()
+            print(f"📊 Database tables created: {', '.join(tables)}")
+            
+        except Exception as e:
+            print(f"❌ Main bot database initialization failed: {e}")
+            import traceback
+            traceback.print_exc()
+            # Try to continue anyway
+        
         # Initialize SQLite database for channel monitoring
         try:
             from channel_guild_monitoring import init_channel_monitoring_db
             init_channel_monitoring_db()
             print("✅ SQLite database initialized for channel monitoring")
         except Exception as e:
-            print(f"⚠️ SQLite database initialization failed: {e}")
+            print(f"❌ Channel monitoring database initialization failed: {e}")
         
         # Initialize clan monitoring database
         try:
             from clan_monitoring import init_monitoring_db
+            print("🔄 Starting clan monitoring database initialization...")
             init_monitoring_db()
             print("✅ Clan monitoring database initialized")
+            
+            # Verify clan monitoring tables were created
+            import sqlite3
+            import os
+            from pathlib import Path
+            clan_db_path = Path(__file__).parent / "clan_monitoring.db"
+            if os.path.exists(clan_db_path):
+                conn = sqlite3.connect(str(clan_db_path))
+                cursor = conn.cursor()
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                tables = [row[0] for row in cursor.fetchall()]
+                conn.close()
+                print(f"📊 Clan monitoring tables created: {', '.join(tables)}")
+            else:
+                print("❌ Clan monitoring database file not created")
+                
         except Exception as e:
-            print(f"⚠️ Clan monitoring database initialization failed: {e}")
+            print(f"❌ Clan monitoring database initialization failed: {e}")
+            import traceback
+            traceback.print_exc()
         
         # Load cogs from commands folder
         await self.load_cog('commands.commander_commands')
