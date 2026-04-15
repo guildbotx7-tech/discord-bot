@@ -194,7 +194,7 @@ def monitor_guild_list(access_token, guild_id):
     """
     try:
         print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Checking guild {guild_id}...")
-        api_response = fetch_member_guild(access_token)
+        api_response = fetch_member_guild(access_token, timeout=45, retries=1)
         changes = check_list_changes(api_response, guild_id)
         return {"status": "success", "changes": changes}
     except MemberGuildAPIError as e:

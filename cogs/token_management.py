@@ -1,4 +1,4 @@
-"""Owner-only commands for managing clan monitoring tokens.
+"""Owner-only commands for managing server monitoring tokens.
 
 SECURITY: Only the bot owner can register/manage access tokens.
 Tokens are NEVER logged, displayed, or exposed to Discord.
@@ -24,7 +24,7 @@ class TokenManagementCog(commands.Cog):
     @commands.command(name="register_token")
     @commands.is_owner()
     async def register_clan_token(self, ctx, channel: discord.TextChannel = None):
-        """Register this guild's clan monitoring token.
+        """Register this server's guild monitoring token.
 
         IMPORTANT:
         1. Set the environment variable GUILD_TOKEN_<GUILD_ID> first
@@ -54,7 +54,7 @@ class TokenManagementCog(commands.Cog):
             # Confirm without revealing token
             embed = discord.Embed(
                 title="✅ Token Registered",
-                description=f"Clan monitoring activated for **{ctx.guild.name}**\nNotifications: {notification_channel.mention}",
+                description=f"Guild monitoring activated for **{ctx.guild.name}**\nNotifications: {notification_channel.mention}",
                 color=discord.Color.green(),
             )
             embed.set_footer(text="⚠️ Token is secure. Never logging or displaying it.")
@@ -84,7 +84,7 @@ class TokenManagementCog(commands.Cog):
     @commands.command(name="token_status")
     @commands.is_owner()
     async def show_token_status(self, ctx):
-        """Check if this guild has a registered token.
+        """Check if this server has a registered token.
 
         Usage:
             !token_status
@@ -98,7 +98,7 @@ class TokenManagementCog(commands.Cog):
             if is_token_registered(guild_id):
                 embed = discord.Embed(
                     title="✅ Token Registered",
-                    description=f"**{ctx.guild.name}** has an active token for clan monitoring.",
+                    description=f"**{ctx.guild.name}** has an active token for guild monitoring.",
                     color=discord.Color.green(),
                 )
             else:
@@ -116,9 +116,9 @@ class TokenManagementCog(commands.Cog):
     @commands.command(name="unregister_token")
     @commands.is_owner()
     async def unregister_clan_token(self, ctx):
-        """Unregister this guild's token and stop monitoring.
+        """Unregister this server's token and stop monitoring.
 
-        WARNING: This will disable clan monitoring for this guild.
+        WARNING: This will disable guild monitoring for this server.
 
         Usage:
             !unregister_token
@@ -141,7 +141,7 @@ class TokenManagementCog(commands.Cog):
 
             embed = discord.Embed(
                 title="⏹️ Token Unregistered",
-                description=f"Clan monitoring stopped for **{ctx.guild.name}**",
+                description=f"Guild monitoring stopped for **{ctx.guild.name}**",
                 color=discord.Color.orange(),
             )
             embed.set_footer(text="⚠️ Also manually remove/clear GUILD_TOKEN_ from .env")

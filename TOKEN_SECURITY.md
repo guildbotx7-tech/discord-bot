@@ -1,6 +1,6 @@
 """Secure Token Management Guide
 
-This document explains how to securely manage clan monitoring tokens with owner-only access.
+This document explains how to securely manage guild monitoring tokens with owner-only access.
 """
 
 # ============================================================================
@@ -24,15 +24,15 @@ This document explains how to securely manage clan monitoring tokens with owner-
 STEP 1: Set Environment Variables
 ==================================
 
-For each guild/clan you want to monitor, set an environment variable:
+For each server/guild you want to monitor, set an environment variable:
 
 In your .env file:
     GUILD_TOKEN_123456789=your_secret_api_token_here
     GUILD_TOKEN_987654321=another_secret_token_here
 
 Where:
-- 123456789 = Discord Guild ID (right-click guild → Copy Server ID)
-- your_secret_api_token_here = Free Fire memberClan API token
+- 123456789 = Discord Server ID (right-click server → Copy Server ID)
+- your_secret_api_token_here = Free Fire memberGuild API token
 
 Example:
     GUILD_TOKEN_63582136=abc123def456xyz789token
@@ -71,7 +71,7 @@ In Discord, the bot owner runs:
 
 Response (ephemeral, only visible to owner):
     ✅ Token Registered
-    Clan monitoring activated for **Guild Name**
+    Guild monitoring activated for **Server Name**
     Notifications: #channel-name
 
 The bot will send a confirmation to the owner's DMs.
@@ -85,13 +85,13 @@ OWNER-ONLY TOKEN COMMANDS
 ==========================
 
 1. !register_token [channel]
-   - Register this guild's token for monitoring
+   - Register this server's token for monitoring
    - Optional: specify notification channel (default: current channel)
    - Requires environment variable GUILD_TOKEN_<GUILD_ID> to be set
    - Response: Ephemeral, only visible to owner
 
 2. !token_status
-   - Check if this guild has a registered token
+   - Check if this server has a registered token
    - Response: Ephemeral, only visible to owner
 
 3. !unregister_token

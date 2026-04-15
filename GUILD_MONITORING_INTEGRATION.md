@@ -8,8 +8,6 @@ This integration adds Free Fire guild monitoring capabilities to your existing D
 - **Automatic Notifications**: Get notified when players join/leave guilds
 - **Member Management**: View current guild members
 - **Change History**: Track membership changes over time
-- **Ban System**: Log banned players (local tracking)
-- **Global Bans**: Ban players across all monitored guilds
 
 ## Setup
 
@@ -29,8 +27,6 @@ The guild monitoring is automatically loaded when you start your bot. No additio
 ### Commander-Only Commands
 
 - `/register_guild <guild_id>` - Register a Free Fire guild for monitoring in the current channel
-- `/ban_player <uid> [reason]` - Ban a player from the guild (logs the action)
-- `/global_ban <uid> [reason]` - Ban a player across all monitored guilds
 
 ### Public Commands
 
@@ -85,20 +81,6 @@ The guild monitoring is automatically loaded when you start your bot. No additio
    ```
    Shows the last 30 join/leave events.
 
-### Managing Players
-
-1. **Ban a Player**:
-   ```
-   /ban_player uid: 1234567890 reason: Cheating
-   ```
-   Logs the ban action (doesn't actually ban via API).
-
-2. **Global Ban**:
-   ```
-   /global_ban uid: 1234567890 reason: Toxic behavior
-   ```
-   Bans the player across all monitored guilds.
-
 ## Database Schema
 
 ### channel_guilds
@@ -128,7 +110,7 @@ The guild monitoring is automatically loaded when you start your bot. No additio
 
 ## Security Notes
 
-- Only Commanders can register guilds and ban players
+- Only Commanders can register guilds
 - API tokens are stored as environment variables only
 - Player data is cached locally for performance
 - All actions are logged via your existing logging system
@@ -156,6 +138,5 @@ The guild monitoring is automatically loaded when you start your bot. No additio
 - **Flexible**: One channel = one guild, unlimited channels
 - **Automatic**: Background monitoring with notifications
 - **Historical**: Track changes over time
-- **Management**: Built-in ban tracking and member viewing
 
 The integration is now complete and ready to use!

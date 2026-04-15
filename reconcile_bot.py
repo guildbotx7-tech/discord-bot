@@ -15,6 +15,7 @@ load_dotenv()
 
 TOKEN = os.getenv("TOKEN")
 GUILD_ID = os.getenv("GUILD_ID")  # optional for instant guild-level slash command registration
+ALLOWED_GUILD_ID = 1485214892213538878  # Only server where bot is allowed to operate
 
 # Import version management
 from version import get_current_version, get_version_string
@@ -48,14 +49,22 @@ class MyBot(commands.Bot):
         except Exception as e:
             print(f"⚠️ SQLite database initialization failed: {e}")
         
+        # Initialize clan monitoring database
+        try:
+            from clan_monitoring import init_monitoring_db
+            init_monitoring_db()
+            print("✅ Clan monitoring database initialized")
+        except Exception as e:
+            print(f"⚠️ Clan monitoring database initialization failed: {e}")
+        
         # Load cogs from commands folder
         await self.load_cog('commands.commander_commands')
         await self.load_cog('commands.channel_commands')
-        await self.load_cog('commands.moderation_commands')
         await self.load_cog('commands.cleanup_commands')
         await self.load_cog('commands.utility_commands')
         await self.load_cog('commands.reconcile_bot')
         await self.load_cog('commands.guild_monitoring')  # Free Fire Guild Monitoring
+        await self.load_cog('commands.moderation_commands')  # Load after guild_monitoring
         
         # Sync commands (guild-specific if configured, otherwise global)
         if GUILD_ID:
@@ -65,6 +74,15 @@ class MyBot(commands.Bot):
         else:
             await self.tree.sync()
             print(f"✅ Synced {len(self.tree._get_all_commands())} commands globally")
+
+        # Start background clan monitoring if configured
+        # NOTE: Clan monitoring now handled by GuildMonitoringCog in commands/guild_monitoring.py
+        # The new system includes banned player alerts and per-channel service configuration
+        try:
+            # setup_clan_monitoring(self)  # DISABLED - using new GuildMonitoringCog
+            print("✅ Clan monitoring setup completed (using new GuildMonitoringCog)")
+        except Exception as e:
+            print(f"⚠️ Failed to start clan monitoring: {e}")
 
         # Print command list for debug
         all_names = [cmd.name for cmd in self.tree.walk_commands()]
@@ -83,7 +101,22 @@ bot = MyBot()
 @bot.event
 async def on_ready():
     print(f"✅ Bot is ready. Logged in as {bot.user}")
-    print(f"🎮 Active in {len(bot.guilds)} guild(s)")
+    print(f"🎮 Active in {len(bot.guilds)} server(s)")
+    
+    # Leave any servers that aren't the allowed guild
+    for guild in bot.guilds:
+        if guild.id != ALLOWED_GUILD_ID:
+            print(f"⚠️  Leaving unauthorized server: {guild.name} (ID: {guild.id})")
+            await guild.leave()
+
+@bot.event
+async def on_guild_join(guild):
+    """Leave immediately if bot joins any server other than the allowed one"""
+    if guild.id != ALLOWED_GUILD_ID:
+        print(f"⚠️  Joined unauthorized server: {guild.name} (ID: {guild.id}) - Leaving immediately")
+        await guild.leave()
+    else:
+        print(f"✅ Joined authorized server: {guild.name} (ID: {guild.id})")
 
 @bot.event
 async def on_error(event, *args, **kwargs):

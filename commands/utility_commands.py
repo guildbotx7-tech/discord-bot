@@ -7,8 +7,9 @@ import shutil
 from pathlib import Path
 import zipfile
 import io
+import json
 from datetime import datetime
-from helpers import is_commander, set_log_channel_async, get_log_channel_async, safe_send, log_action, get_ist_now
+from helpers import is_commander, set_log_channel_async, get_log_channel_async, safe_send, log_action, get_ist_now, get_banned_players, get_channel_services, set_channel_service, SERVICES, get_all_channel_services
 from version import increment_version, get_version_string
 
 
@@ -75,6 +76,54 @@ class HelpView(discord.ui.View):
         embed.set_footer(text="Use Previous/Next buttons or jump to a section")
 
         await interaction.response.edit_message(embed=embed, view=self)
+
+
+class ServiceToggleModal(discord.ui.Modal):
+    def __init__(self, channel_id, current_services):
+        super().__init__(title="Toggle Services")
+        self.channel_id = channel_id
+        self.current_services = current_services
+
+        # Add text inputs for each service
+        for service in SERVICES:
+            enabled = self.current_services.get(service, True)
+            input_field = discord.ui.TextInput(
+                label=service.replace("_", " ").title(),
+                placeholder="true or false",
+                default=str(enabled).lower(),
+                max_length=5
+            )
+            self.add_item(input_field)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        # Parse the inputs
+        new_services = {}
+        for i, service in enumerate(SERVICES):
+            value_str = self.children[i].value.lower().strip()
+            new_services[service] = value_str in ("true", "1", "yes", "on")
+
+        # Update
+        for service, enabled in new_services.items():
+            set_channel_service(self.channel_id, service, enabled)
+
+        # Send confirmation
+        embed = discord.Embed(title=f"Services Updated for Channel {self.channel_id}", color=discord.Color.green())
+        for service in SERVICES:
+            status = "✅ Enabled" if new_services[service] else "❌ Disabled"
+            embed.add_field(name=service.replace("_", " ").title(), value=status, inline=False)
+        await interaction.response.edit_message(embed=embed, view=None)
+
+
+class ServiceView(discord.ui.View):
+    def __init__(self, channel_id, services_status):
+        super().__init__(timeout=300)
+        self.channel_id = channel_id
+        self.services_status = services_status
+
+    @discord.ui.button(label="Toggle Services", style=discord.ButtonStyle.primary)
+    async def toggle_services(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = ServiceToggleModal(self.channel_id, self.services_status)
+        await interaction.response.send_modal(modal)
 
 
 class UtilityCommands(commands.Cog):
@@ -177,12 +226,10 @@ class UtilityCommands(commands.Cog):
             ]),
             ("⚔️ Guild Reconciliation Commands", [
                 "  • `/currentmembers` – Show current guild members",
-                "  • `/guildupdates` – Update guild and show changes",
                 "  • `/clearguild` – Clear guild data (Head Commander only)",
-                "  • `/editguild <text>` – Edit guild members (Head Commander only)",
                 "  • `/guildhistory` – Show guild change history",
                 "  • `/resethistory` – Clear history (Head Commander only)",
-                "  • `/export <type> <format>` – Export guild data",
+                "  • `/export <type> <format>` – Export guild data (api_guild_members, guild_logs)",
                 "  • `/exportall` – Export all data as ZIP",
                 "  • `/addheadcommander <user>` – Add Head Commander role",
                 "  • `/removeheadcommander <user>` – Remove Head Commander role",
@@ -197,22 +244,6 @@ class UtilityCommands(commands.Cog):
                 "  • `/lockchannel` – Lock channel",
                 "  • `/unlockchannel` – Unlock channel"
             ]),
-            ("⚠️ Moderation Commands", [
-                "  • `/warnuid` – Warn players by UID (modal)",
-                "  • `/warnings <uid>` – View warnings for UID",
-                "  • `/listwarnings` – List all warned members",
-                "  • `/clearwarnings <uid>` – Clear warnings (Admin)",
-                "  • `/check_glory` – Check glory levels below threshold",
-                "  • `/view_glory` – View all glory levels",
-                "  • `/glory_warn` – Auto-warn players below threshold",
-                "  • `/set_glory_threshold <threshold>` – Set glory threshold",
-                "  • `/update_glory` – Update glory data (modal)",
-                "  • `/add_glory_exception <uid> <reason>` – Exempt player",
-                "  • `/remove_glory_exception <uid>` – Remove exception",
-                "  • `/list_glory_exceptions` – View exceptions",
-                "  • `/mute <user>` – Mute user",
-                "  • `/unmute <user>` – Unmute user"
-            ]),
             ("🧹 Cleanup Commands", [
                 "  • `/prune <amount>` – Delete messages",
                 "  • `/pruneuser <user> <amount>` – Delete user messages"
@@ -221,20 +252,32 @@ class UtilityCommands(commands.Cog):
                 "  • `/setlogchannel <channel>` – Set log channel",
                 "  • `/getlogchannel` – View log channel",
                 "  • `/pingdb` – Check database connection",
-                "  • `/exportdb` – Export all databases (Owner only)",
-                "  • `/importdb <backup_file>` – Import databases from backup (Owner only)",
                 "  • `/version` – Show current bot version"
+            ]),
+            ("👑 Owner Commands", [
+                "  • `/increment_version <change_type>` – Increment bot version",
+                "  • `/exportdb` – Export all databases",
+                "  • `/importdb <backup_file>` – Import databases from backup",
+                "  • `/viewservices <channel_id>` – View and toggle services enabled for a channel",
+                "  • `/allservices` – Show services for all channels with custom settings"
             ]),
             ("🔥 Guild Monitoring Commands", [
                 "  • `/register_guild` – Register guild for monitoring",
                 "  • `/remove_guild` – Remove guild registration",
-                "  • `/guild_status` – Check monitoring status",
+                "  • `/guild_status` – Check guild monitoring status",
                 "  • `/guild_updates` – View current members and recent changes",
-                "  • `/guild_members` – View current guild members with guild info",
-                "  • `/guild_changes` – View all current guild members with detailed data",
-                "  • `/ban_player` – Ban player from guild",
-                "  • `/global_ban` – Globally ban player",
-                "  • `/set_monitoring_cycle` – Set monitoring interval"
+                "  • `/guild_members` – View current guild members",
+                "  • `/guild_changes` – View all guild members with detailed data",
+                "  • `/monitor_player` – Add player to monitoring",
+                "  • `/remove_monitored` – Remove player from monitoring",
+                "  • `/ignore_player` – Temporarily ignore player monitoring",
+                "  • `/unignore_player` – Resume player monitoring",
+                "  • `/list_monitored` – List all monitored players",
+                "  • `/grant_permission` – Grant partnered guild join permission (modal)",
+                "  • `/set_monitoring_speed` – Set global guild monitoring speed",
+                "  • `/set_ban_monitoring_speed` – Set ban monitoring speed for banned player alerts",
+                "  • `/set_player_monitoring_speed` – Set channel player monitoring speed",
+                "  • `/debug_player_monitor` – Debug player monitoring status"
             ])
         ]
 
@@ -278,6 +321,10 @@ class UtilityCommands(commands.Cog):
                 if discord_db.exists():
                     zip_file.write(discord_db, arcname="discord_bot.db")
 
+                    # Also export banned player data separately for easier review
+                    banned_players = get_banned_players(include_inactive=True)
+                    zip_file.writestr("banned_players.json", json.dumps(banned_players, indent=2))
+
                 # Add clan_monitoring.db if it exists
                 if clan_db.exists():
                     zip_file.write(clan_db, arcname="clan_monitoring.db")
@@ -303,7 +350,52 @@ class UtilityCommands(commands.Cog):
                 f"❌ Failed to export databases: {str(e)}",
                 ephemeral=True
             )
-            await log_action(interaction, "Database Export Failed", f"{interaction.user.mention} failed to export databases: {str(e)}")
+
+    @app_commands.command(name="viewservices", description="View services enabled for a channel (Owner only)")
+    @app_commands.describe(channel_id="The channel ID to check")
+    async def viewservices(self, interaction: discord.Interaction, channel_id: str):
+        await interaction.response.defer()
+        
+        if interaction.user.id != self.bot.owner_id:
+            await interaction.followup.send("❌ Only the bot owner can view channel services.")
+            return
+
+        try:
+            channel_id_int = int(channel_id)
+        except:
+            await interaction.followup.send("❌ Invalid channel ID.")
+            return
+
+        services_status = get_channel_services(channel_id_int)
+        embed = discord.Embed(title=f"Services for Channel {channel_id}", color=discord.Color.blue())
+        for service in SERVICES:
+            status = "✅ Enabled" if services_status.get(service, True) else "❌ Disabled"
+            embed.add_field(name=service.replace("_", " ").title(), value=status, inline=False)
+        view = ServiceView(str(channel_id_int), services_status)
+        await interaction.followup.send(embed=embed, view=view)
+
+    @app_commands.command(name="allservices", description="Show services for all channels with custom settings (Owner only)")
+    async def allservices(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        
+        if interaction.user.id != self.bot.owner_id:
+            await interaction.followup.send("❌ Only the bot owner can view all channel services.", ephemeral=True)
+            return
+
+        all_services = get_all_channel_services()
+        if not all_services:
+            await interaction.followup.send("No channels have custom service settings (all use defaults: enabled).", ephemeral=True)
+            return
+
+        embed = discord.Embed(title="All Channel Services", description="Channels with custom service configurations:", color=discord.Color.blue())
+        for channel_id, services in all_services.items():
+            service_list = []
+            for service in SERVICES:
+                status = "✅" if services.get(service, True) else "❌"
+                service_list.append(f"{status} {service.replace('_', ' ').title()}")
+            embed.add_field(name=f"Channel {channel_id}", value="\n".join(service_list), inline=False)
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="importdb", description="Import SQLite databases from backup (Owner only)")
     @app_commands.describe(backup_file="Upload the backup ZIP file exported from /exportdb")
@@ -421,6 +513,7 @@ class UtilityCommands(commands.Cog):
                 ephemeral=True
             )
             await log_action(interaction, "Database Import Failed", f"{interaction.user.mention} failed to import databases: {str(e)}")
+
 
 
 async def setup(bot):

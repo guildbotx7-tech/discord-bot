@@ -14,7 +14,7 @@ ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-from helpers import log_action, is_globally_banned
+from helpers import log_action
 
 DB_PATH = "guild.db"
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -77,138 +77,6 @@ class GuildHistoryView(discord.ui.View):
         else:
             await interaction.response.edit_message(content=content, view=self)
 
-class GuildUpdateModal(discord.ui.Modal, title="Update Guild Members"):
-    def __init__(self, cog):
-        super().__init__()
-        self.cog = cog
-
-    guild_data = discord.ui.TextInput(
-        label="Guild Member Data",
-        placeholder="Paste lines like Name,UID (e.g. Player1,123456789)",
-        style=discord.TextStyle.paragraph,
-        required=True,
-        max_length=4000
-    )
-
-    async def on_submit(self, interaction: discord.Interaction):
-        text = self.guild_data.value
-        current_members, invalid = self.cog.parse_member_lines(text)
-
-        # Check for globally banned players
-        banned_players = []
-        for uid in current_members.keys():
-            if is_globally_banned(uid):
-                player_name = current_members[uid]
-                banned_players.append(f"{player_name} ({uid})")
-
-        self.cog.cursor.execute("SELECT members FROM guild_state WHERE channel_id=?", (interaction.channel_id,))
-        row = self.cog.cursor.fetchone()
-
-        joined, left = [], []
-        name_changes = []
-        if row:
-            old_members = {int(uid): name for uid, name in json.loads(row[0]).items()}
-            joined = [(name, uid) for uid, name in current_members.items() if uid not in old_members]
-            left = [(name, uid) for uid, name in old_members.items() if uid not in current_members]
-            # Check for name changes
-            for uid in set(current_members.keys()) & set(old_members.keys()):
-                if current_members[uid] != old_members[uid]:
-                    name_changes.append((old_members[uid], current_members[uid], uid))
-
-        # Save/update current state
-        self.cog.cursor.execute(
-            "REPLACE INTO guild_state (channel_id, members) VALUES (?, ?)",
-            (interaction.channel_id, json.dumps(current_members))
-        )
-
-        # Log to history if there are changes
-        if joined or left:
-            self.cog.cursor.execute(
-                "INSERT INTO guild_history (channel_id, timestamp, joined, left) VALUES (?, ?, ?, ?)",
-                (interaction.channel_id, datetime.now(IST).isoformat(), json.dumps(joined), json.dumps(left))
-            )
-
-        self.cog.conn.commit()
-
-        # Build message content
-        msg = "**Guild Updates**\n"
-        msg += f"📋 Current Members: {len(current_members)}\n\n"
-
-        # Prepare CSV content
-        joined_csv = "Name,UID\n" + "\n".join([f"{name},{uid}" for name, uid in joined]) if joined else ""
-        left_csv = "Name,UID\n" + "\n".join([f"{name},{uid}" for name, uid in left]) if left else ""
-        name_change_list = "\n".join([f"{old_name} -> {new_name} ({uid})" for old_name, new_name, uid in name_changes]) if name_changes else ""
-
-        # Estimate total message length
-        estimated_length = len(msg) + len(joined_csv) + len(left_csv) + len(name_change_list) + 200  # padding for formatting
-
-        if estimated_length > 1800 or len(joined) > 20 or len(left) > 20:  # Use file if too long or too many changes
-            # Create summary message and attach CSV file
-            summary_msg = "**Guild Updates**\n"
-            summary_msg += f"📋 Current Members: {len(current_members)}\n"
-            summary_msg += f"✅ Joined: {len(joined)}\n"
-            summary_msg += f"❌ Left: {len(left)}\n"
-            summary_msg += f"🔄 Name Changes: {len(name_changes)}\n"
-
-            if invalid:
-                summary_msg += f"⚠️ Skipped invalid UIDs: {len(invalid)}\n"
-
-            if banned_players:
-                summary_msg += f"🚫 **Globally Banned Players Detected:** {len(banned_players)}\n"
-                summary_msg += "\n".join([f"• {player}" for player in banned_players[:5]])  # Show first 5
-                if len(banned_players) > 5:
-                    summary_msg += f"\n... and {len(banned_players) - 5} more"
-                summary_msg += "\n\n"
-
-            # Create CSV file with all changes
-            import io
-            import csv
-            buf = io.StringIO()
-            writer = csv.writer(buf)
-
-            writer.writerow(["Action", "Name", "UID"])
-            for name, uid in joined:
-                writer.writerow(["Joined", name, uid])
-            for name, uid in left:
-                writer.writerow(["Left", name, uid])
-            for old_name, new_name, uid in name_changes:
-                writer.writerow(["Name Change", f"{old_name} -> {new_name}", str(uid)])
-
-            file = discord.File(io.BytesIO(buf.getvalue().encode("utf-8")), filename="guild_changes.csv")
-            await interaction.response.send_message(summary_msg, file=file)
-        else:
-            # Use normal message format
-            if joined:
-                msg += f"✅ **Joined:**\n```csv\n{joined_csv}\n```\n"
-
-            if left:
-                msg += f"❌ **Left:**\n```csv\n{left_csv}\n```\n"
-
-            if name_changes:
-                msg += f"🔄 **Name Changes:**\n{name_change_list}\n\n"
-
-            if not joined and not left and not name_changes:
-                msg += "No changes since last update."
-
-            if banned_players:
-                msg += f"\n🚫 **Globally Banned Players Detected:**\n"
-                msg += "\n".join([f"• {player}" for player in banned_players[:10]])  # Show first 10
-                if len(banned_players) > 10:
-                    msg += f"\n... and {len(banned_players) - 10} more"
-                msg += "\n\n"
-
-            if invalid:
-                msg += f"⚠️ Skipped invalid UIDs: {', '.join([f'{name} ({uid})' for name, uid in invalid])}"
-
-            await interaction.response.send_message(msg)
-
-        await log_action(interaction, "Guild Updates", f"Updated guild: {len(joined)} joined, {len(left)} left, {len(name_changes)} name changes.")
-
-    async def on_error(self, interaction: discord.Interaction, error: Exception):
-        await interaction.response.send_message("An error occurred while processing your guild data.", ephemeral=True)
-        print(f"Modal error: {error}")
-
-
 class ReconcileCog(commands.Cog):
     """Commands for tracking Free Fire guild member changes"""
 
@@ -252,10 +120,10 @@ class ReconcileCog(commands.Cog):
 
     @staticmethod
     def has_head_commander(interaction: discord.Interaction) -> bool:
-        """Check if user has Head Commander role"""
+        """Check if user has Head Commander role or Commander role"""
         if not isinstance(interaction.user, discord.Member):
             return False
-        return any(role.name == "head commander" for role in interaction.user.roles)
+        return any(role.name.lower() in ["head commander", "commander"] for role in interaction.user.roles)
 
     @app_commands.command(name="currentmembers", description="Show current guild members")
     async def currentmembers(self, interaction: discord.Interaction):
@@ -263,7 +131,7 @@ class ReconcileCog(commands.Cog):
         row = self.cursor.fetchone()
 
         if not row or not row[0]:
-            await interaction.response.send_message("No guild data stored yet. Use `/guildupdates` first.")
+            await interaction.response.send_message("No guild data stored yet.")
             return
 
         members = json.loads(row[0])
@@ -277,20 +145,6 @@ class ReconcileCog(commands.Cog):
         await interaction.response.send_message(msg)
         await log_action(interaction, "Current Members Viewed", f"Displayed {len(members)} guild members.")
 
-    @app_commands.command(name="guildupdates", description="Show Free Fire guild changes (modal)")
-    async def guildupdates(self, interaction: discord.Interaction):
-        modal = GuildUpdateModal(self)
-        try:
-            await interaction.response.send_modal(modal)
-        except discord.HTTPException as e:
-            if getattr(e, 'code', None) == 40060 or interaction.response.is_done():
-                await interaction.followup.send(
-                    "Unable to open the guild update modal because the interaction has already been acknowledged. Please try `/guildupdates` again.",
-                    ephemeral=True
-                )
-            else:
-                raise
-
     @app_commands.command(name="clearguild", description="Clear guild data for this channel")
     async def clearguild(self, interaction: discord.Interaction):
         if not self.has_head_commander(interaction):
@@ -300,30 +154,6 @@ class ReconcileCog(commands.Cog):
         self.conn.commit()
         await interaction.response.send_message("Guild data cleared for this channel.")
         await log_action(interaction, "Clear Guild", "Cleared all guild data.")
-
-    @app_commands.command(name="editguild", description="Edit guild members (format: Name,UID per line - updates existing or adds new)")
-    async def editguild(self, interaction: discord.Interaction, text: str):
-        if not self.has_head_commander(interaction):
-            await interaction.response.send_message("You need the Head Commander role to use this command.", ephemeral=True)
-            return
-        members_to_edit, invalid = self.parse_member_lines(text)
-        if not members_to_edit:
-            await interaction.response.send_message("No valid members to edit. Use: Name,UID per line.")
-            return
-
-        self.cursor.execute("SELECT members FROM guild_state WHERE channel_id=?", (interaction.channel_id,))
-        row = self.cursor.fetchone()
-        current_members = {int(uid): name for uid, name in json.loads(row[0]).items()} if row and row[0] else {}
-
-        current_members.update(members_to_edit)
-        self.cursor.execute("REPLACE INTO guild_state (channel_id, members) VALUES (?, ?)", (interaction.channel_id, json.dumps(current_members)))
-        self.conn.commit()
-
-        response = f"Guild updated with {len(members_to_edit)} member(s)."
-        if invalid:
-            response += f"\nSkipped invalid UIDs: {', '.join([f'{name} ({uid})' for name, uid in invalid])}"
-        await interaction.response.send_message(response)
-        await log_action(interaction, "Edit Guild", f"Edited guild: {len(members_to_edit)} members updated.")
 
     @app_commands.command(name="guildhistory", description="Show guild change history")
     async def guildhistory(self, interaction: discord.Interaction):
@@ -411,16 +241,15 @@ class ReconcileCog(commands.Cog):
         await interaction.response.send_message(msg)
         await log_action(interaction, "List Head Commanders", f"Listed {len(head_commander_role.members)} Head Commanders.")
 
-    @app_commands.command(name="export", description="Export guild data in various formats")
+    @app_commands.command(name="export", description="All-in-one export of guild data in various formats")
     @app_commands.describe(
         data_type="What data to export",
         export_format="Export format"
     )
     @app_commands.choices(
         data_type=[
-            app_commands.Choice(name="Current Guild Members", value="guild_members"),
-            app_commands.Choice(name="Guild Change History", value="guild_history"),
-            app_commands.Choice(name="Guild State (JSON)", value="guild_state")
+            app_commands.Choice(name="API Guild Members", value="api_guild_members"),
+            app_commands.Choice(name="Guild Logs", value="guild_logs")
         ],
         export_format=[
             app_commands.Choice(name="CSV", value="csv"),
@@ -431,32 +260,32 @@ class ReconcileCog(commands.Cog):
     async def export(
         self,
         interaction: discord.Interaction,
-        data_type: str = "guild_members",
+        data_type: str = "api_guild_members",
         export_format: str = "csv"
     ):
-        data_type = data_type or "guild_members"
+        data_type = data_type or "api_guild_members"
         export_format = export_format or "csv"
 
-        if data_type == "guild_members":
+        if data_type == "api_guild_members":
             self.cursor.execute("SELECT members FROM guild_state WHERE channel_id=?", (interaction.channel_id,))
             row = self.cursor.fetchone()
             if not row or not row[0]:
-                await interaction.response.send_message("No guild members found to export.")
-                await log_action(interaction, "Export Guild Members", "No data found.")
+                await interaction.response.send_message("No API guild members found to export.")
+                await log_action(interaction, "Export API Guild Members", "No data found.")
                 return
 
             members = json.loads(row[0])
             data = [{"name": name, "uid": uid} for uid, name in members.items()]
 
-        elif data_type == "guild_history":
+        elif data_type == "guild_logs":
             self.cursor.execute(
                 "SELECT timestamp, joined, left FROM guild_history WHERE channel_id=? ORDER BY id DESC",
                 (interaction.channel_id,)
             )
             rows = self.cursor.fetchall()
             if not rows:
-                await interaction.response.send_message("No guild history found to export.")
-                await log_action(interaction, "Export Guild History", "No data found.")
+                await interaction.response.send_message("No guild logs found to export.")
+                await log_action(interaction, "Export Guild Logs", "No data found.")
                 return
 
             data = []
@@ -468,29 +297,19 @@ class ReconcileCog(commands.Cog):
                     entry["left"] = json.loads(left_json)
                 data.append(entry)
 
-        elif data_type == "guild_state":
-            self.cursor.execute("SELECT members FROM guild_state WHERE channel_id=?", (interaction.channel_id,))
-            row = self.cursor.fetchone()
-            if not row or not row[0]:
-                await interaction.response.send_message("No guild state found to export.")
-                await log_action(interaction, "Export Guild State", "No data found.")
-                return
-
-            data = json.loads(row[0])
-
         if export_format == "csv":
             import io
             import csv
             buf = io.StringIO()
 
-            if data_type == "guild_members":
+            if data_type == "api_guild_members":
                 writer = csv.writer(buf)
                 writer.writerow(["Name", "UID"])
                 for member in data:
                     writer.writerow([member["name"], member["uid"]])
-                filename = "guild_members.csv"
+                filename = "api_guild_members.csv"
 
-            elif data_type == "guild_history":
+            elif data_type == "guild_logs":
                 writer = csv.writer(buf)
                 writer.writerow(["Timestamp", "Action", "Name", "UID"])
                 for entry in data:
@@ -501,14 +320,7 @@ class ReconcileCog(commands.Cog):
                     if "left" in entry:
                         for name, uid in entry["left"]:
                             writer.writerow([timestamp, "Left", name, uid])
-                filename = "guild_history.csv"
-
-            elif data_type == "guild_state":
-                writer = csv.writer(buf)
-                writer.writerow(["UID", "Name"])
-                for uid, name in data.items():
-                    writer.writerow([uid, name])
-                filename = "guild_state.csv"
+                filename = "guild_logs.csv"
 
             file = discord.File(io.BytesIO(buf.getvalue().encode("utf-8")), filename=filename)
 
@@ -521,13 +333,13 @@ class ReconcileCog(commands.Cog):
             import io
             buf = io.StringIO()
 
-            if data_type == "guild_members":
-                buf.write("Current Guild Members:\n\n")
+            if data_type == "api_guild_members":
+                buf.write("API Guild Members:\n\n")
                 for member in data:
                     buf.write(f"{member['name']},{member['uid']}\n")
 
-            elif data_type == "guild_history":
-                buf.write("Guild Change History:\n\n")
+            elif data_type == "guild_logs":
+                buf.write("Guild Logs:\n\n")
                 for entry in data:
                     buf.write(f"[{entry['timestamp']}]\n")
                     if "joined" in entry:
@@ -539,11 +351,6 @@ class ReconcileCog(commands.Cog):
                         for name, uid in entry["left"]:
                             buf.write(f"  {name} ({uid})\n")
                     buf.write("\n")
-
-            elif data_type == "guild_state":
-                buf.write("Guild State (UID -> Name):\n\n")
-                for uid, name in data.items():
-                    buf.write(f"{uid} -> {name}\n")
 
             file = discord.File(io.BytesIO(buf.getvalue().encode("utf-8")), filename=f"{data_type}.txt")
 
@@ -599,14 +406,6 @@ class ReconcileCog(commands.Cog):
         await interaction.response.send_message("Here's a complete export of all guild data:", file=file)
         await log_action(interaction, "Export All Data", "Exported complete guild data as ZIP.")
 
-    @app_commands.command(name="listreconcile", description="List all Reconcile cog commands")
-    async def listreconcile(self, interaction: discord.Interaction):
-        commands = [
-            "currentmembers", "guildupdates", "clearguild", "editguild", "guildhistory",
-            "resethistory", "addheadcommander", "removeheadcommander", "listheadcommanders",
-            "export", "exportall", "listreconcile"
-        ]
-        await interaction.response.send_message(f"Reconcile commands: {', '.join(commands)}")
 
 
 async def setup(bot):

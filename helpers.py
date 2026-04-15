@@ -77,32 +77,22 @@ def init_db():
         )
     ''')
 
-    # Create ban records table
+    # Create ban records table for tracking banned players and alerts
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS bans (
+        CREATE TABLE IF NOT EXISTS banned_players (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            guild_id TEXT,
             channel_id TEXT,
             uid TEXT,
-            player_name TEXT,
+            nickname TEXT,
             reason TEXT,
-            whatsapp TEXT,
             banned_by TEXT,
-            timestamp TEXT
-        )
-    ''')
-
-    # Create universal global ban list for all guilds
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS global_bans (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            uid TEXT UNIQUE,
-            player_name TEXT,
-            reason TEXT,
-            whatsapp TEXT,
-            banned_by TEXT,
-            timestamp TEXT,
-            source_guild_id TEXT
+            banned_at TEXT,
+            active INTEGER DEFAULT 1,
+            alert_sent INTEGER DEFAULT 0,
+            alert_clan_id TEXT,
+            alert_clan_name TEXT,
+            alert_at TEXT,
+            UNIQUE(channel_id, uid)
         )
     ''')
 
@@ -139,7 +129,16 @@ def init_db():
         )
     ''')
 
-    # Migration support for older schema without channel_id (warnings/bans)
+    # Create bot_settings table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS bot_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    ''')
+
+    # Migration support for older schema without channel_id (warnings)
     cursor.execute("PRAGMA table_info(warnings)")
     columns = [row[1] for row in cursor.fetchall()]
     if "channel_id" not in columns:
@@ -149,16 +148,6 @@ def init_db():
             print("Migrated warnings table to include channel_id")
         except Exception as e:
             print(f"Migration note: could not alter warnings table: {e}")
-
-    cursor.execute("PRAGMA table_info(bans)")
-    ban_columns = [row[1] for row in cursor.fetchall()]
-    if "channel_id" not in ban_columns:
-        try:
-            cursor.execute("ALTER TABLE bans ADD COLUMN channel_id TEXT")
-            cursor.execute("UPDATE bans SET channel_id = guild_id WHERE channel_id IS NULL OR channel_id = ''")
-            print("Migrated bans table to include channel_id")
-        except Exception as e:
-            print(f"Migration note: could not alter bans table: {e}")
 
     conn.commit()
     conn.close()
@@ -237,6 +226,155 @@ def clear_channel_data(channel_id):
         conn.close()
     except Exception as e:
         print(f"Could not clear channel data for {channel_id}: {e}")
+
+
+def add_banned_player(channel_id, uid, nickname, reason, banned_by, timestamp=None):
+    """Add a banned player record for a channel."""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT OR REPLACE INTO banned_players (channel_id, uid, nickname, reason, banned_by, banned_at, active, alert_sent) VALUES (?, ?, ?, ?, ?, ?, 1, 0)",
+            (
+                str(channel_id),
+                str(uid),
+                nickname,
+                reason,
+                banned_by,
+                timestamp or get_ist_timestamp(),
+            )
+        )
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Could not add banned player {uid} for channel {channel_id}: {e}")
+        return False
+
+
+def remove_banned_player(uid, channel_id=None):
+    """Remove a banned player record by UID and optional channel."""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        if channel_id is not None:
+            cursor.execute(
+                "DELETE FROM banned_players WHERE channel_id = ? AND uid = ?",
+                (str(channel_id), str(uid))
+            )
+        else:
+            cursor.execute(
+                "DELETE FROM banned_players WHERE uid = ?",
+                (str(uid),)
+            )
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Could not remove banned player {uid}: {e}")
+        return False
+
+
+def get_banned_players(channel_id=None, include_inactive=False):
+    """Retrieve banned players for a channel or all channels."""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        if channel_id is not None:
+            if include_inactive:
+                cursor.execute(
+                    "SELECT channel_id, uid, nickname, reason, banned_by, banned_at, active, alert_sent, alert_clan_id, alert_clan_name, alert_at FROM banned_players WHERE channel_id = ?",
+                    (str(channel_id),)
+                )
+            else:
+                cursor.execute(
+                    "SELECT channel_id, uid, nickname, reason, banned_by, banned_at, active, alert_sent, alert_clan_id, alert_clan_name, alert_at FROM banned_players WHERE channel_id = ? AND active = 1",
+                    (str(channel_id),)
+                )
+        else:
+            if include_inactive:
+                cursor.execute(
+                    "SELECT channel_id, uid, nickname, reason, banned_by, banned_at, active, alert_sent, alert_clan_id, alert_clan_name, alert_at FROM banned_players"
+                )
+            else:
+                cursor.execute(
+                    "SELECT channel_id, uid, nickname, reason, banned_by, banned_at, active, alert_sent, alert_clan_id, alert_clan_name, alert_at FROM banned_players WHERE active = 1"
+                )
+        rows = cursor.fetchall()
+        conn.close()
+        return [
+            {
+                "channel_id": row[0],
+                "uid": row[1],
+                "nickname": row[2],
+                "reason": row[3],
+                "banned_by": row[4],
+                "banned_at": row[5],
+                "active": bool(row[6]),
+                "alert_sent": bool(row[7]),
+                "alert_clan_id": row[8],
+                "alert_clan_name": row[9],
+                "alert_at": row[10],
+            }
+            for row in rows
+        ]
+    except Exception as e:
+        print(f"Could not retrieve banned players: {e}")
+        return []
+
+
+def get_banned_player(uid, channel_id=None):
+    """Retrieve a single banned player record."""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        if channel_id is not None:
+            cursor.execute(
+                "SELECT channel_id, uid, nickname, reason, banned_by, banned_at, active, alert_sent, alert_clan_id, alert_clan_name, alert_at FROM banned_players WHERE channel_id = ? AND uid = ?",
+                (str(channel_id), str(uid))
+            )
+        else:
+            cursor.execute(
+                "SELECT channel_id, uid, nickname, reason, banned_by, banned_at, active, alert_sent, alert_clan_id, alert_clan_name, alert_at FROM banned_players WHERE uid = ?",
+                (str(uid),)
+            )
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return None
+        return {
+            "channel_id": row[0],
+            "uid": row[1],
+            "nickname": row[2],
+            "reason": row[3],
+            "banned_by": row[4],
+            "banned_at": row[5],
+            "active": bool(row[6]),
+            "alert_sent": bool(row[7]),
+            "alert_clan_id": row[8],
+            "alert_clan_name": row[9],
+            "alert_at": row[10],
+        }
+    except Exception as e:
+        print(f"Could not retrieve banned player {uid}: {e}")
+        return None
+
+
+def mark_banned_player_alert_sent(uid, channel_id, clan_id, clan_name):
+    """Mark a banned player as having triggered an alert."""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE banned_players SET alert_sent = 1, alert_clan_id = ?, alert_clan_name = ?, alert_at = ? WHERE uid = ? AND channel_id = ?",
+            (str(clan_id), clan_name, get_ist_timestamp(), str(uid), str(channel_id))
+        )
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Could not mark alert sent for banned player {uid}: {e}")
+        return False
 
 
 async def get_channel_data_async(channel_id):
@@ -429,207 +567,6 @@ def get_member_name_by_uid(channel_id, uid):
         return None
 
 
-def add_ban(channel_id, uid, player_name, reason, whatsapp, banned_by, timestamp, guild_id=None, global_ban=False):
-    """Add a ban entry for a channel."""
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        guild_value = str(guild_id) if guild_id is not None else ""
-        cursor.execute(
-            "INSERT INTO bans (guild_id, channel_id, uid, player_name, reason, whatsapp, banned_by, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (guild_value, str(channel_id), str(uid), player_name, reason, whatsapp, banned_by, timestamp)
-        )
-        conn.commit()
-        conn.close()
-        if global_ban:
-            add_global_ban(uid, player_name, reason, whatsapp, banned_by, timestamp, source_guild_id=guild_id)
-        return True
-    except Exception as e:
-        print(f"Could not add ban for {uid} in channel {channel_id}: {e}")
-        return False
-
-
-def get_bans(channel_id):
-    """Retrieve all bans for a channel."""
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT id, uid, player_name, reason, whatsapp, banned_by, timestamp FROM bans WHERE channel_id = ? ORDER BY id DESC",
-            (str(channel_id),)
-        )
-        rows = cursor.fetchall()
-        conn.close()
-        return rows
-    except Exception as e:
-        print(f"Could not fetch bans for channel {channel_id}: {e}")
-        return []
-
-
-def get_ban(channel_id, uid):
-    """Get a ban record for a specific UID in a channel."""
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT id, uid, player_name, reason, whatsapp, banned_by, timestamp FROM bans WHERE channel_id = ? AND uid = ? ORDER BY id DESC",
-            (str(channel_id), str(uid))
-        )
-        row = cursor.fetchone()
-        conn.close()
-        return row
-    except Exception as e:
-        print(f"Could not fetch ban for {uid} in channel {channel_id}: {e}")
-        return None
-
-
-def remove_ban(channel_id, uid):
-    """Remove a ban for a UID in a channel."""
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute(
-            "DELETE FROM bans WHERE channel_id = ? AND uid = ?",
-            (str(channel_id), str(uid))
-        )
-        conn.commit()
-        conn.close()
-        return True
-    except Exception as e:
-        print(f"Could not remove ban for {uid} in channel {channel_id}: {e}")
-        return False
-
-
-def clear_bans(channel_id):
-    """Clear all bans in a channel."""
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute(
-            "DELETE FROM bans WHERE channel_id = ?",
-            (str(channel_id),)
-        )
-        conn.commit()
-        conn.close()
-        return True
-    except Exception as e:
-        print(f"Could not clear bans for channel {channel_id}: {e}")
-        return False
-
-
-def get_banned_members(channel_id):
-    """Retrieve all banned members for a channel."""
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT uid, player_name, reason, whatsapp, banned_by, timestamp FROM bans WHERE channel_id = ? ORDER BY id DESC",
-            (str(channel_id),)
-        )
-        rows = cursor.fetchall()
-        conn.close()
-        return rows
-    except Exception as e:
-        print(f"Could not fetch banned members for channel {channel_id}: {e}")
-        return []
-
-
-def add_global_ban(uid, player_name, reason, whatsapp, banned_by, timestamp, source_guild_id=None):
-    """Add (or update) a universal ban across all guilds."""
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        source_value = str(source_guild_id) if source_guild_id is not None else ""
-        cursor.execute(
-            "INSERT OR REPLACE INTO global_bans (uid, player_name, reason, whatsapp, banned_by, timestamp, source_guild_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (str(uid), player_name, reason, whatsapp, banned_by, timestamp, source_value)
-        )
-        conn.commit()
-        conn.close()
-        return True
-    except Exception as e:
-        print(f"Could not add global ban for {uid}: {e}")
-        return False
-
-
-def get_global_bans():
-    """Retrieve all global bans."""
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT uid, player_name, reason, whatsapp, banned_by, timestamp, source_guild_id FROM global_bans ORDER BY id DESC"
-        )
-        rows = cursor.fetchall()
-        conn.close()
-        return rows
-    except Exception as e:
-        print(f"Could not fetch global bans: {e}")
-        return []
-
-
-def get_global_ban(uid):
-    """Retrieve a global ban entry by UID."""
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT uid, player_name, reason, whatsapp, banned_by, timestamp, source_guild_id FROM global_bans WHERE uid = ?",
-            (str(uid),)
-        )
-        row = cursor.fetchone()
-        conn.close()
-        return row
-    except Exception as e:
-        print(f"Could not fetch global ban for {uid}: {e}")
-        return None
-
-
-def remove_global_ban(uid):
-    """Remove a specific UID from the global ban list."""
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute(
-            "DELETE FROM global_bans WHERE uid = ?",
-            (str(uid),)
-        )
-        conn.commit()
-        conn.close()
-        return True
-    except Exception as e:
-        print(f"Could not remove global ban for {uid}: {e}")
-        return False
-
-
-def clear_global_bans():
-    """Clear all global bans."""
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM global_bans")
-        conn.commit()
-        conn.close()
-        return True
-    except Exception as e:
-        print(f"Could not clear global bans: {e}")
-        return False
-
-
-def is_globally_banned(uid):
-    """Check if the UID is in the global ban list."""
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute("SELECT 1 FROM global_bans WHERE uid = ?", (str(uid),))
-        result = cursor.fetchone()
-        conn.close()
-        return bool(result)
-    except Exception as e:
-        print(f"Could not check global ban for {uid}: {e}")
-        return False
-
-
 def update_glory(channel_id, uid, glory, updated_by, timestamp):
     """Update glory data for a player in a channel."""
     try:
@@ -799,6 +736,13 @@ def is_commander(interaction):
             return True
     return False
 
+
+def is_head_commander(interaction):
+    """Check if user has Head Commander role or Commander role"""
+    if not isinstance(interaction.user, discord.Member):
+        return False
+    return any(role.name.lower() in ["head commander", "commander"] for role in interaction.user.roles)
+
 # Data processing
 def parse_member_lines(text, ID_RE):
     """Parse member list from text input"""
@@ -813,3 +757,75 @@ def parse_member_lines(text, ID_RE):
             name = line.replace(id_, "").replace(",", " ").strip(" -:|")
             members[id_] = name
     return members
+
+# Bot settings functions
+def get_bot_setting(key):
+    """Get a bot setting by key."""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM bot_settings WHERE key = ?", (key,))
+        result = cursor.fetchone()
+        conn.close()
+        return result[0] if result else None
+    except Exception as e:
+        print(f"Could not get bot setting {key}: {e}")
+        return None
+
+def set_bot_setting(key, value):
+    """Set a bot setting by key."""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT OR REPLACE INTO bot_settings (key, value, updated_at) VALUES (?, ?, ?)",
+            (key, value, get_ist_timestamp())
+        )
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Could not set bot setting {key}: {e}")
+        return False
+
+# Channel services - toggleable bot functionalities per channel
+SERVICES = [
+    "guild_monitoring",     # Partnered guild movement tracking
+    "ban_monitoring",       # Banned player monitoring and alerts
+    "player_monitoring",    # Individual player activity monitoring
+    "glory_tracking"        # Glory point monitoring and thresholds
+]
+
+def get_channel_services(channel_id):
+    """Get services enabled for a channel."""
+    key = f"channel_services:{channel_id}"
+    value = get_bot_setting(key)
+    if value:
+        return json.loads(value)
+    else:
+        # Default all enabled
+        return {service: True for service in SERVICES}
+
+def set_channel_service(channel_id, service, enabled):
+    """Set a service enabled/disabled for a channel."""
+    current = get_channel_services(channel_id)
+    current[service] = enabled
+    key = f"channel_services:{channel_id}"
+    set_bot_setting(key, json.dumps(current))
+
+def get_all_channel_services():
+    """Get services for all channels that have custom settings."""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT key, value FROM bot_settings WHERE key LIKE 'channel_services:%'")
+        rows = cursor.fetchall()
+        conn.close()
+        result = {}
+        for key, value in rows:
+            channel_id = key.split(':', 1)[1]
+            result[channel_id] = json.loads(value)
+        return result
+    except Exception as e:
+        print(f"Could not get all channel services: {e}")
+        return {}

@@ -1,6 +1,6 @@
 # Discord Bot - Reconcile
 
-A Discord bot for managing guild members and bound player lists with SQLite persistence.
+A Discord bot for managing server members and bound player lists with SQLite persistence.
 
 ## Features
 

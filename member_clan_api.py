@@ -175,3 +175,70 @@ def record_membership_change(ff_uid, change_type, clan_id=None, timestamp=None):
         "clan_id": clan_id,
         "timestamp": timestamp or get_ist_timestamp(),
     }
+
+
+def fetch_player_info(uid, timeout=10):
+    """Fetch player information from the player info API.
+
+    Args:
+        uid (int): Free Fire UID.
+        timeout (int): HTTP request timeout in seconds.
+
+    Returns:
+        dict: Player information containing name, uid, clan info, etc.
+
+    Raises:
+        MemberClanAPIError: If the request fails or response is invalid.
+    """
+    # Rate limit external API calls synchronously
+    external_api_limiter.wait_for_slot_sync()
+
+    url = f"https://info-ob49.onrender.com/api/account/?uid={uid}&region=ind"
+    request = Request(url, method="GET")
+    request.add_header("Accept", "application/json")
+
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            raw = response.read()
+            try:
+                data = json.loads(raw.decode("utf-8"))
+                return data
+            except ValueError as exc:
+                raise MemberClanAPIError(f"Invalid JSON response: {exc}") from exc
+    except HTTPError as exc:
+        raise MemberClanAPIError(f"HTTP error {exc.code}: {exc.reason}") from exc
+    except URLError as exc:
+        if "getaddrinfo failed" in str(exc.reason):
+            raise MemberClanAPIError(
+                f"Cannot reach the player info API server. "
+                f"Check your internet connection or firewall settings. "
+                f"Error: {exc.reason}"
+            ) from exc
+        elif "timed out" in str(exc.reason).lower() or isinstance(exc.reason, TimeoutError):
+            raise MemberClanAPIError(f"Player info request timed out after {timeout}s") from exc
+        else:
+            raise MemberClanAPIError(f"Player info API error: {exc.reason}") from exc
+    except Exception as exc:
+        raise MemberClanAPIError(f"Unexpected error fetching player info: {exc}") from exc
+
+
+def get_player_clan_info(uid):
+    """Get clan information for a player.
+
+    Args:
+        uid (int): Free Fire UID.
+
+    Returns:
+        dict or None: Clan information with clanId and clanName, or None if not in a clan.
+    """
+    try:
+        player_info = fetch_player_info(uid)
+        if player_info and "clanBasicInfo" in player_info:
+            clan_info = player_info["clanBasicInfo"]
+            return {
+                "clanId": clan_info.get("clanId"),
+                "clanName": clan_info.get("clanName")
+            }
+        return None
+    except MemberClanAPIError:
+        return None

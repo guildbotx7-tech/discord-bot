@@ -1,6 +1,6 @@
-"""Integration guide for clan membership monitoring.
+"""Integration guide for guild membership monitoring.
 
-This file shows how to integrate the clan monitoring system into your Discord bot.
+This file shows how to integrate the guild monitoring system into your Discord bot.
 """
 
 # ============================================================================
@@ -11,7 +11,7 @@ This file shows how to integrate the clan monitoring system into your Discord bo
 From your bot initialization code, add these imports:
 
     from clan_monitor_task import setup_clan_monitoring, register_guild_token
-    from member_clan_api import fetch_member_clan, get_roster_uids
+    from member_guild_api import fetch_member_guild, get_roster_uids
 
 And in your bot's setup_hook():
 
@@ -20,7 +20,7 @@ And in your bot's setup_hook():
         # Load your existing cogs
         await bot.load_extension('cogs.yourexistingcog')
         
-        # Setup clan monitoring
+        # Setup guild monitoring
         setup_clan_monitoring(bot)
 
 Register guild tokens (BEFORE calling setup_clan_monitoring):
@@ -67,13 +67,13 @@ After setting up the cog, you can use these commands in Discord:
 
 """
 1. MONITORING RUNS EVERY 10 MINUTES:
-   - Fetches current clan roster from the API
+   - Fetches current guild roster from the API
    - Compares with previous roster snapshot
    - Detects who joined and who left
    - Stores all changes in SQLite database
 
 2. DATABASE TABLES:
-   - roster_snapshots: Stores the current roster UIDs for each clan
+   - roster_snapshots: Stores the current roster UIDs for each guild
    - membership_changes: Logs all join/leave events with timestamps
 
 3. COMMANDS RETRIEVE HISTORY:
@@ -88,7 +88,7 @@ After setting up the cog, you can use these commands in Discord:
 # ============================================================================
 
 """
-For each Discord guild/clan you want to monitor, add:
+For each Discord server/guild you want to monitor, add:
 
     GUILD_TOKEN_<GUILD_ID>=<YOUR_API_TOKEN>
 

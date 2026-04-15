@@ -1,28 +1,36 @@
-"""Discord bot commands for viewing clan membership changes."""
+"""Discord bot commands for viewing guild membership changes."""
 
 import discord
 from discord.ext import commands
 
-from clan_monitoring import get_recent_changes
+from clan_monitoring import (
+    get_recent_changes,
+    get_flagged_movements,
+    add_monitored_player,
+    remove_monitored_player,
+    get_monitored_players,
+    is_player_monitored
+)
+from channel_guild_monitoring import get_channel_guild_id
 
 
 class ClanMonitoringCog(commands.Cog):
-    """Commands for viewing Free Fire clan membership tracking."""
+    """Commands for viewing Free Fire guild membership tracking."""
 
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(name="clan_changes", aliases=["cc", "clan_history"])
+    @commands.command(name="guild_changes", aliases=["cc", "clan_history", "clan_changes"])
     @commands.has_permissions(administrator=True)
     async def show_clan_changes(self, ctx, limit: int = 20):
-        """Display recent clan membership changes.
+        """Display recent guild membership changes.
 
         Args:
             limit: Number of recent changes to show (default: 20, max: 100).
 
         Usage:
-            !clan_changes          # Show last 20 changes
-            !clan_changes 50       # Show last 50 changes
+            !guild_changes          # Show last 20 changes
+            !guild_changes 50       # Show last 50 changes
             !cc                    # Alias
         """
         try:
@@ -33,7 +41,7 @@ class ClanMonitoringCog(commands.Cog):
 
             if not changes:
                 embed = discord.Embed(
-                    title="📊 Clan Membership Changes",
+                    title="📊 Guild Membership Changes",
                     description="No membership changes recorded yet.",
                     color=discord.Color.greyple(),
                 )
@@ -42,7 +50,7 @@ class ClanMonitoringCog(commands.Cog):
 
             # Build embed with changes
             embed = discord.Embed(
-                title="📊 Clan Membership Changes",
+                title="📊 Guild Membership Changes",
                 description=f"Showing last {len(changes)} changes",
                 color=discord.Color.blue(),
             )
@@ -74,16 +82,16 @@ class ClanMonitoringCog(commands.Cog):
             await ctx.send(embed=embed)
 
         except Exception as e:
-            await ctx.send(f"❌ Error retrieving clan changes: {e}")
+            await ctx.send(f"❌ Error retrieving guild changes: {e}")
 
-    @commands.command(name="clan_joins")
+    @commands.command(name="guild_joins", aliases=["clan_joins"])
     @commands.has_permissions(administrator=True)
     async def show_recent_joins(self, ctx, limit: int = 10):
-        """Show who recently joined the clan.
+        """Show who recently joined the guild.
 
         Usage:
-            !clan_joins            # Show last 10 joins
-            !clan_joins 20         # Show last 20 joins
+            !guild_joins            # Show last 10 joins
+            !guild_joins 20         # Show last 20 joins
         """
         try:
             limit = min(limit, 50)
@@ -97,7 +105,7 @@ class ClanMonitoringCog(commands.Cog):
                 return
 
             embed = discord.Embed(
-                title="✅ Recent Clan Joins",
+                title="✅ Recent Guild Joins",
                 description=f"{len(joins)} member(s) joined recently",
                 color=discord.Color.green(),
             )
@@ -116,14 +124,14 @@ class ClanMonitoringCog(commands.Cog):
         except Exception as e:
             await ctx.send(f"❌ Error: {e}")
 
-    @commands.command(name="clan_leaves")
+    @commands.command(name="guild_leaves", aliases=["clan_leaves"])
     @commands.has_permissions(administrator=True)
     async def show_recent_leaves(self, ctx, limit: int = 10):
-        """Show who recently left the clan.
+        """Show who recently left the guild.
 
         Usage:
-            !clan_leaves           # Show last 10 leaves
-            !clan_leaves 20        # Show last 20 leaves
+            !guild_leaves           # Show last 10 leaves
+            !guild_leaves 20        # Show last 20 leaves
         """
         try:
             limit = min(limit, 50)
@@ -137,7 +145,7 @@ class ClanMonitoringCog(commands.Cog):
                 return
 
             embed = discord.Embed(
-                title="❌ Recent Clan Leaves",
+                title="❌ Recent Guild Leaves",
                 description=f"{len(leaves)} member(s) left recently",
                 color=discord.Color.red(),
             )
@@ -156,15 +164,15 @@ class ClanMonitoringCog(commands.Cog):
         except Exception as e:
             await ctx.send(f"❌ Error: {e}")
 
-    @commands.command(name="clan_stats")
+    @commands.command(name="guild_stats", aliases=["clan_stats"])
     @commands.has_permissions(administrator=True)
     async def show_clan_stats(self, ctx):
-        """Display clan membership statistics.
+        """Display guild membership statistics.
 
         Shows total joins, leaves, and net change.
 
         Usage:
-            !clan_stats
+            !guild_stats
         """
         try:
             clan_id = ctx.guild.id
@@ -175,7 +183,7 @@ class ClanMonitoringCog(commands.Cog):
             net_change = joined_count - left_count
 
             embed = discord.Embed(
-                title="📈 Clan Membership Statistics",
+                title="📈 Guild Membership Statistics",
                 color=discord.Color.gold(),
             )
 
@@ -187,6 +195,228 @@ class ClanMonitoringCog(commands.Cog):
             if all_changes:
                 latest = all_changes[0]
                 embed.set_footer(text=f"Last event: {latest['timestamp']}")
+
+            await ctx.send(embed=embed)
+
+        except Exception as e:
+            await ctx.send(f"❌ Error: {e}")
+
+    @commands.command(name="flagged_movements", aliases=["fm", "rival_moves", "partnered_moves", "partnered_movements"])
+    @commands.has_permissions(administrator=True)
+    async def show_flagged_movements(self, ctx, limit: int = 20):
+        """Display recent partnered player movements to partnered guilds.
+
+        Args:
+            limit: Number of recent partnered movements to show (default: 20, max: 50).
+
+        Usage:
+            !flagged_movements     # Show last 20 partnered movements
+            !flagged_movements 10  # Show last 10 partnered movements
+            !fm                    # Alias
+        """
+        try:
+            limit = min(limit, 50)  # Cap at 50
+
+            movements = get_flagged_movements(limit)
+
+            if not movements:
+                embed = discord.Embed(
+                    title="🚨 Partnered Player Movements",
+                    description="No partnered movements detected yet.",
+                    color=discord.Color.red(),
+                )
+                await ctx.send(embed=embed)
+                return
+
+            # Build embed with partnered movements
+            embed = discord.Embed(
+                title="🚨 Partnered Player Movements",
+                description=f"Players who moved to partnered guilds\nShowing last {len(movements)} movements",
+                color=discord.Color.red(),
+            )
+
+            movement_text = ""
+            for movement in movements:
+                nickname = movement["nickname"] or "Unknown"
+                movement_text += (
+                    f"**{nickname}** (UID: `{movement['uid']}`)\n"
+                    f"From: `{movement['from_clan_id']}` → To: `{movement['to_clan_id']}`\n"
+                    f"Time: {movement['timestamp']}\n\n"
+                )
+
+            if len(movement_text) > 4000:  # Discord embed limit
+                movement_text = movement_text[:4000] + "..."
+
+            embed.add_field(name="Recent Movements", value=movement_text or "None", inline=False)
+
+            embed.set_footer(text="🚨 These players moved to partnered guilds!")
+
+            await ctx.send(embed=embed)
+
+        except Exception as e:
+            await ctx.send(f"❌ Error: {e}")
+
+    @commands.command(name="monitor_player", aliases=["mp", "watch_player"])
+    @commands.has_permissions(administrator=True)
+    async def monitor_player(self, ctx, uid: str, duration_hours: int):
+        """Add a specific player to monitoring.
+
+        Args:
+            uid: Free Fire UID to monitor.
+            duration_hours: Hours to monitor (max 4380).
+
+        Usage:
+            !monitor_player 1281687888 24
+            !mp 1281687888 48
+        """
+        try:
+            # Validate UID
+            try:
+                ff_uid = int(uid)
+            except ValueError:
+                await ctx.send("❌ Invalid UID. Must be a number.")
+                return
+
+            # Validate duration
+            if duration_hours is None or duration_hours < 1 or duration_hours > 4380:
+                await ctx.send("❌ Duration must be between 1 and 4380 hours.")
+                return
+
+            guild_id = get_channel_guild_id(ctx.channel.id)
+            if not guild_id:
+                await ctx.send("❌ No guild is registered for this channel. Register a guild first.")
+                return
+
+            # Check if already monitored for this channel
+            if is_player_monitored(ff_uid, ctx.channel.id):
+                await ctx.send(f"❌ Player UID `{ff_uid}` is already being monitored for this guild.")
+                return
+
+            # Try to get player nickname
+            nickname = None
+            try:
+                from member_clan_api import fetch_player_info
+                player_info = fetch_player_info(ff_uid)
+                if player_info and "basicInfo" in player_info:
+                    nickname = player_info["basicInfo"].get("nickname")
+            except:
+                pass
+
+            # Add to monitoring
+            success = add_monitored_player(ff_uid, nickname, duration_hours, ctx.author.id, ctx.channel.id)
+
+            if success:
+                embed = discord.Embed(
+                    title="👁️ Player Added to Monitoring",
+                    color=discord.Color.orange(),
+                )
+                embed.add_field(name="Player", value=f"{nickname or 'Unknown'} (UID: `{ff_uid}`)", inline=False)
+
+                duration_label = "Indefinite" if duration_hours is None else f"{duration_hours} hours"
+                embed.add_field(name="Duration", value=duration_label, inline=True)
+                embed.add_field(name="Added by", value=ctx.author.mention, inline=True)
+                embed.set_footer(text="Player activity will be monitored and alerted")
+
+                await ctx.send(embed=embed)
+            else:
+                await ctx.send("❌ Failed to add player to monitoring.")
+
+        except Exception as e:
+            await ctx.send(f"❌ Error: {e}")
+
+    @commands.command(name="stop_monitoring", aliases=["sm", "unwatch_player"])
+    @commands.has_permissions(administrator=True)
+    async def stop_monitoring(self, ctx, uid: str):
+        """Remove a player from monitoring.
+
+        Args:
+            uid: Free Fire UID to stop monitoring.
+
+        Usage:
+            !stop_monitoring 1281687888
+            !sm 1281687888
+        """
+        try:
+            # Validate UID
+            try:
+                ff_uid = int(uid)
+            except ValueError:
+                await ctx.send("❌ Invalid UID. Must be a number.")
+                return
+
+            guild_id = get_channel_guild_id(ctx.channel.id)
+            if not guild_id:
+                await ctx.send("❌ No guild is registered for this channel. Register a guild first.")
+                return
+
+            # Check if monitored for this channel
+            if not is_player_monitored(ff_uid, ctx.channel.id):
+                await ctx.send(f"❌ Player UID `{ff_uid}` is not currently being monitored for this guild.")
+                return
+
+            # Remove from monitoring
+            success = remove_monitored_player(ff_uid, ctx.channel.id)
+
+            if success:
+                embed = discord.Embed(
+                    title="❌ Player Removed from Monitoring",
+                    description=f"Player UID `{ff_uid}` is no longer being monitored.",
+                    color=discord.Color.greyple(),
+                )
+                embed.set_footer(text="Monitoring stopped")
+                await ctx.send(embed=embed)
+            else:
+                await ctx.send("❌ Failed to remove player from monitoring.")
+
+        except Exception as e:
+            await ctx.send(f"❌ Error: {e}")
+
+    @commands.command(name="list_monitored", aliases=["lm", "monitored_players"])
+    @commands.has_permissions(administrator=True)
+    async def list_monitored(self, ctx):
+        """List all currently monitored players.
+
+        Usage:
+            !list_monitored
+            !lm
+        """
+        try:
+            guild_id = get_channel_guild_id(ctx.channel.id)
+            if not guild_id:
+                await ctx.send("❌ No guild is registered for this channel. Register a guild first.")
+                return
+
+            monitored_players = get_monitored_players(ctx.channel.id)
+
+            if not monitored_players:
+                embed = discord.Embed(
+                    title="👁️ Monitored Players",
+                    description="No players are currently being monitored.",
+                    color=discord.Color.greyple(),
+                )
+                await ctx.send(embed=embed)
+                return
+
+            # Build embed with monitored players
+            embed = discord.Embed(
+                title="👁️ Monitored Players",
+                description=f"Currently monitoring {len(monitored_players)} players",
+                color=discord.Color.orange(),
+            )
+
+            player_text = ""
+            for player in monitored_players:
+                nickname = player["nickname"] or "Unknown"
+                player_text += (
+                    f"**{nickname}** (UID: `{player['ff_uid']}`)\n"
+                    f"Ends: {player['monitoring_end'][:19]}\n\n"
+                )
+
+            if len(player_text) > 4000:  # Discord embed limit
+                player_text = player_text[:4000] + "..."
+
+            embed.add_field(name="Active Monitoring", value=player_text or "None", inline=False)
+            embed.set_footer(text="👁️ These players are being actively monitored for guild activity")
 
             await ctx.send(embed=embed)
 
