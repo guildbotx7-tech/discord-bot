@@ -106,6 +106,7 @@ class MyBot(commands.Bot):
         await self.load_cog('commands.reconcile_bot')
         await self.load_cog('commands.guild_monitoring')  # Free Fire Guild Monitoring
         await self.load_cog('commands.moderation_commands')  # Load after guild_monitoring
+        await self.load_cog('cogs.token_management')  # Token management commands
         
         # Sync commands (guild-specific if configured, otherwise global)
         if GUILD_ID:

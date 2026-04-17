@@ -293,7 +293,6 @@ class ActivityLogFilterSelect(discord.ui.View):
         
         # Apply today filter if selected
         if "today" in self.selected_filters:
-            from helpers import get_ist_now, IST
             today_start = get_ist_now().replace(hour=0, minute=0, second=0, microsecond=0)
             filtered_changes = []
             for change in type_filtered:

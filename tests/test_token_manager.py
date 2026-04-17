@@ -20,7 +20,7 @@ def env_setup(monkeypatch):
     test_guild_id = 123456789
     test_token = "secret_test_token_abc123"
 
-    monkeypatch.setenv("GUILD_ACCESS_TOKEN", test_token)
+    monkeypatch.setenv(f"GUILD_TOKEN_{test_guild_id}", test_token)
 
     return test_guild_id, test_token
 
@@ -76,7 +76,7 @@ def test_register_token_fails_without_env_var(test_db, monkeypatch):
     owner_id = 987654321
     channel_id = 111222333
 
-    with pytest.raises(TokenStorageError, match="GUILD_ACCESS_TOKEN not found"):
+    with pytest.raises(TokenStorageError, match=f"GUILD_TOKEN_{guild_id} not found"):
         register_token(guild_id, channel_id, owner_id)
 
 
@@ -128,12 +128,15 @@ def test_unregister_token_removes_registration(env_setup, test_db):
     assert is_token_registered(guild_id) is False
 
 
-def test_multiple_guilds_independent(env_setup, test_db):
+def test_multiple_guilds_independent(env_setup, test_db, monkeypatch):
     """Test multiple guilds can be registered independently."""
     guild_id1, _ = env_setup
     guild_id2 = 987654321
     owner_id = 987654321
     channel_id = 111222333
+
+    # Set env for second guild
+    monkeypatch.setenv(f"GUILD_TOKEN_{guild_id2}", "secret_test_token_xyz789")
 
     # Register first guild
     register_token(guild_id1, channel_id, owner_id)
@@ -148,6 +151,7 @@ def test_multiple_guilds_independent(env_setup, test_db):
     # Unregister first guild
     unregister_token(guild_id1)
     assert is_token_registered(guild_id1) is False
+    assert is_token_registered(guild_id2) is True
     assert is_token_registered(guild_id2) is True
 
 

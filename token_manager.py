@@ -22,19 +22,19 @@ def init_token_db():
     pass
 
 
-def _get_token_from_env():
+def _get_token_from_env(guild_id):
     """Retrieve token from environment variable (internal only).
 
     Never call this function from user-facing code.
-    Uses GUILD_ACCESS_TOKEN environment variable.
+    Uses GUILD_TOKEN_<guild_id> environment variable.
     """
-    return os.getenv('GUILD_ACCESS_TOKEN')
+    return os.getenv(f'GUILD_TOKEN_{guild_id}')
 
 
 def register_token(guild_id, channel_id, owner_id):
     """Register the server monitoring token for this server (single-server bot).
 
-    The token itself should be in GUILD_ACCESS_TOKEN environment variable.
+    The token itself should be in GUILD_TOKEN_<guild_id> environment variable.
     This just records the registration.
 
     Args:
@@ -49,11 +49,11 @@ def register_token(guild_id, channel_id, owner_id):
         TokenStorageError: If token not found in environment.
     """
     # Verify token exists in environment
-    token = _get_token_from_env()
+    token = _get_token_from_env(guild_id)
     if not token:
         raise TokenStorageError(
-            "GUILD_ACCESS_TOKEN not found in environment. "
-            "Set GUILD_ACCESS_TOKEN=your_token_here in .env file"
+            f"GUILD_TOKEN_{guild_id} not found in environment. "
+            "Set GUILD_TOKEN_<guild_id>=your_token_here in .env file"
         )
 
     try:
@@ -93,7 +93,7 @@ def get_token_for_guild(guild_id):
 
         if result:
             # Return the token from environment
-            return _get_token_from_env()
+            return _get_token_from_env(guild_id)
         return None
     except Exception:
         return None

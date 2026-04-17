@@ -6,6 +6,7 @@ Tokens are NEVER logged, displayed, or exposed to Discord.
 
 import discord
 from discord.ext import commands
+from discord import app_commands
 
 from token_manager import (
     is_token_registered,
@@ -158,9 +159,17 @@ class TokenManagementCog(commands.Cog):
         except Exception as e:
             await ctx.send(f"❌ Error: {e}", ephemeral=True)
 
+    @app_commands.command(name="edit_guild_access_token", description="Edit the access token for this guild")
+    @commands.is_owner()
+    async def edit_guild_access_token(self, interaction: discord.Interaction):
+        """Edit the access token for this guild (owner only)."""
+        modal = TokenEditModal(self.bot)
+        await interaction.response.send_modal(modal)
+
     @register_clan_token.error
     @show_token_status.error
     @unregister_clan_token.error
+    @edit_guild_access_token.error
     async def token_commands_error(self, ctx, error):
         """Handle token command errors."""
         if isinstance(error, commands.NotOwner):
@@ -172,6 +181,58 @@ class TokenManagementCog(commands.Cog):
             await ctx.send(embed=embed, ephemeral=True)
         else:
             await ctx.send(f"❌ Error: {error}", ephemeral=True)
+
+
+class TokenEditModal(discord.ui.Modal, title="Edit Guild Access Token"):
+    token_input = discord.ui.TextInput(
+        label="New Access Token",
+        style=discord.TextStyle.short,
+        placeholder="Enter the new access token",
+        required=True
+    )
+
+    def __init__(self, bot):
+        super().__init__()
+        self.bot = bot
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        new_token = self.token_input.value
+        guild_id = interaction.guild.id
+
+        # Update the .env file
+        from pathlib import Path
+        import os
+        env_file = Path(__file__).parent.parent / ".env"
+        lines = []
+        updated = False
+
+        if env_file.exists():
+            with open(env_file, 'r') as f:
+                lines = f.readlines()
+
+        for i, line in enumerate(lines):
+            if line.startswith(f"GUILD_TOKEN_{guild_id}="):
+                lines[i] = f"GUILD_TOKEN_{guild_id}={new_token}\n"
+                updated = True
+                break
+
+        if not updated:
+            lines.append(f"GUILD_TOKEN_{guild_id}={new_token}\n")
+
+        with open(env_file, 'w') as f:
+            f.writelines(lines)
+
+        # Update the env var for current session
+        os.environ[f'GUILD_TOKEN_{guild_id}'] = new_token
+
+        # Confirm
+        embed = discord.Embed(
+            title="✅ Token Updated",
+            description="The access token for this guild has been updated.",
+            color=discord.Color.green()
+        )
+        await interaction.followup.send(embed=embed)
 
 
 async def setup(bot):
