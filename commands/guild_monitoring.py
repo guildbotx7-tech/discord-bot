@@ -911,46 +911,13 @@ class GuildMonitoringCog(commands.Cog):
                                 else:
                                     print(f"      ❌ Failed to send partnered guild alert")
                         else:
-                            # Player is in a different guild (not necessarily partnered)
-                            embed = discord.Embed(
-                                title="👁️ MONITORED PLAYER ALERT",
-                                description=f"Monitored player has changed guilds!",
-                                color=discord.Color.orange(),
-                                timestamp=get_ist_now()
-                            )
-                            embed.add_field(name="Player", value=f"{nickname} (UID: {ff_uid})", inline=True)
-                            embed.add_field(name="Current Guild", value=f"{guild_name} (ID: {guild_id})", inline=True)
-                            embed.add_field(name="Channel", value=channel.mention, inline=True)
-                            
-                            message_text = f"👁️ **MONITORED PLAYER ALERT**\n👤 {nickname} (UID: {ff_uid})\n🏢 {guild_name} (ID: {guild_id})"
-                            
-                            if await self.send_alert_safe(channel, embed, message_text):
-                                alerts_sent += 1
-                                print(f"      ✅ Guild change alert sent for {nickname}")
-                            else:
-                                print(f"      ❌ Failed to send guild change alert")
+                            # Player is in a different guild but NOT a partnered guild - no alert needed
+                            print(f"      ℹ️ Player in non-partnered guild, skipping alert")
                     else:
                         print(f"      Same as registered guild, no alert needed")
                 else:
-                    # Player not in any guild
-                    print(f"    ❌ Player {nickname} is not in any guild")
-                    embed = discord.Embed(
-                        title="👁️ MONITORED PLAYER ALERT",
-                        description=f"Monitored player is no longer in any guild!",
-                        color=discord.Color.red(),
-                        timestamp=get_ist_now()
-                    )
-                    embed.add_field(name="Player", value=f"{nickname} (UID: {ff_uid})", inline=True)
-                    embed.add_field(name="Status", value="Not in any guild", inline=True)
-                    embed.add_field(name="Channel", value=channel.mention, inline=True)
-                    
-                    message_text = f"👁️ **MONITORED PLAYER ALERT**\n👤 {nickname} (UID: {ff_uid})\n⚠️ No longer in any guild"
-                    
-                    if await self.send_alert_safe(channel, embed, message_text):
-                        alerts_sent += 1
-                        print(f"      ✅ No-guild alert sent for {nickname}")
-                    else:
-                        print(f"      ❌ Failed to send no-guild alert")
+                    # Player not in any guild - no alert needed
+                    print(f"    ℹ️ Player {nickname} is not in any guild, skipping alert")
             
             if alerts_sent > 0:
                 print(f"  ✅ Sent {alerts_sent} player monitoring alerts to {channel.name}")
